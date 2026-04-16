@@ -2,20 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
   <title>MapR — Video Mapping</title>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     :root { --ui-bg: rgba(8,8,14,0.86); }
-    html, body { width:100%; height:100%; overflow:hidden; background:#09090f; }
+    html, body { width:100%; height:100%; overflow:hidden; background:#09090f; touch-action:none; }
+    /* Eliminate 300ms tap delay on interactive elements */
+    .btn, .file-label, .slice-pill, .surf-pill, .tl-scene, #timeline-add,
+    .pl-ctrl-btn, .fx-btn, #slices, #surfaces, #ui { touch-action:manipulation; }
+    /* Allow horizontal swipe-scroll on the scene timeline */
+    #timeline-track { touch-action:pan-x; }
     body::before {
       content:''; position:fixed; inset:0;
       background-image: radial-gradient(circle,rgba(255,255,255,0.04) 1px,transparent 1px);
       background-size:28px 28px; pointer-events:none; z-index:0;
     }
     canvas { position:fixed; inset:0; display:block; z-index:1; }
-
-    /* SVG overlay */
     #overlay { position:fixed; inset:0; z-index:2; overflow:visible; }
 
     /* Node handles */
@@ -33,8 +36,6 @@
                      box-shadow:0 0 14px var(--c,#00e5ff); }
     .handle.sel    { opacity:.7; box-shadow:0 0 7px var(--c,#00e5ff); }
     .handle.hidden { display:none !important; }
-
-    /* Delete badge — appears on hover */
     .handle .del-badge {
       position:absolute; top:-8px; right:-8px;
       width:14px; height:14px; border-radius:50%;
@@ -44,42 +45,60 @@
       transition:opacity .15s; user-select:none;
     }
     .handle:hover .del-badge { opacity:1; }
-
-    /* Long-press ring — circular progress that fills over 600ms */
     .handle::before {
-      content:'';
-      position:absolute; inset:-5px;
-      border-radius:50%;
+      content:''; position:absolute; inset:-5px; border-radius:50%;
       background: conic-gradient(#ff3c3c 0deg, transparent 0deg);
-      opacity:0;
-      transition:opacity .1s;
+      opacity:0; transition:opacity .1s;
     }
-    .handle.pressing::before {
-      opacity:1;
-      animation: lp-fill 0.6s linear forwards;
-    }
+    .handle.pressing::before { opacity:1; animation: lp-fill 0.6s linear forwards; }
     .handle.will-delete {
-      border-color:#ff3c3c !important;
-      background:#ff3c3c !important;
-      opacity:1 !important;
-      transform:translate(-50%,-50%) scale(1.3) !important;
+      border-color:#ff3c3c !important; background:#ff3c3c !important;
+      opacity:1 !important; transform:translate(-50%,-50%) scale(1.3) !important;
       box-shadow:0 0 18px #ff3c3c !important;
     }
     @keyframes lp-fill {
       from { background: conic-gradient(#ff3c3c 0deg,   transparent 0deg); }
       to   { background: conic-gradient(#ff3c3c 360deg, transparent 360deg); }
     }
-
-    /* Edge add-node hit lines (wide invisible stroke) */
-    .edge-hit {
-      stroke:transparent; stroke-width:18; cursor:cell;
-      pointer-events:stroke; fill:none;
-    }
+    .edge-hit { stroke:transparent; stroke-width:18; cursor:cell; pointer-events:stroke; fill:none; }
     .edge-hit:hover + .edge-vis { stroke-opacity:1 !important; }
+
+    /* Slices strip */
+    #slices {
+      position:fixed; bottom:168px; left:50%; transform:translateX(-50%);
+      z-index:20; display:flex; gap:6px; align-items:center;
+      background:var(--ui-bg); backdrop-filter:blur(18px);
+      border:1px solid rgba(255,255,255,0.08); border-radius:10px;
+      padding:6px 10px; box-shadow:0 2px 20px rgba(0,0,0,.4);
+    }
+    .slice-pill {
+      display:inline-flex; align-items:center; gap:5px; padding:4px 10px;
+      border-radius:6px; border:1px solid rgba(255,255,255,.1);
+      background:rgba(255,255,255,.04); cursor:pointer;
+      font:11px/1 'SF Mono',Consolas,monospace; color:rgba(255,255,255,.5);
+      transition:background .12s, border-color .12s, color .12s; user-select:none;
+    }
+    .slice-pill:hover { background:rgba(255,255,255,.1); color:rgba(255,255,255,.85); }
+    .slice-pill.active { background:rgba(255,255,255,.09); border-color:#a78bfa; color:#fff; }
+    .slice-name { pointer-events:none; }
+    .slice-del {
+      margin-left:2px; font-size:9px; opacity:0.4; padding:1px 3px; border-radius:3px;
+      transition:opacity .12s, background .12s;
+    }
+    .slice-del:hover { opacity:1; background:rgba(255,60,60,.2); color:#ff6b6b; }
+    .slice-add-btn {
+      padding:4px 9px !important; font-size:11px !important;
+      background:rgba(167,139,250,.08) !important; border-color:rgba(167,139,250,.25) !important;
+      color:rgba(167,139,250,.7) !important;
+    }
+    .slice-add-btn:hover {
+      background:rgba(167,139,250,.18) !important; border-color:rgba(167,139,250,.5) !important;
+      color:#a78bfa !important;
+    }
 
     /* Surfaces strip */
     #surfaces {
-      position:fixed; bottom:76px; left:50%; transform:translateX(-50%);
+      position:fixed; bottom:118px; left:50%; transform:translateX(-50%);
       z-index:20; display:flex; gap:6px; align-items:center;
       background:var(--ui-bg); backdrop-filter:blur(18px);
       border:1px solid rgba(255,255,255,0.08); border-radius:10px;
@@ -115,8 +134,11 @@
     .btn:hover,.file-label:hover { background:rgba(255,255,255,.11); border-color:rgba(255,255,255,.25); color:#fff; }
     .btn.on { background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.4); color:#fff; }
     .btn.danger:hover { background:rgba(255,60,60,.15); border-color:rgba(255,80,80,.5); color:#ff6b6b; }
-    #file-input { display:none; }
+    #file-input, #proj-input { display:none; }
     .sep { width:1px; height:22px; background:rgba(255,255,255,.1); flex-shrink:0; }
+
+    /* Draw mode */
+    body.drawing, body.drawing * { cursor:crosshair !important; }
 
     /* Logo / status */
     #logo { position:fixed; top:16px; left:20px; z-index:20;
@@ -124,67 +146,478 @@
     #logo em { color:#00e5ff; font-style:normal; }
     #status { position:fixed; top:16px; right:20px; z-index:20;
               font:11px/1.5 'SF Mono',Consolas,monospace; color:rgba(255,255,255,.28); text-align:right; }
-
-    /* Tip: add node */
     #node-tip {
-      position:fixed; bottom:130px; left:50%; transform:translateX(-50%);
+      position:fixed; bottom:216px; left:50%; transform:translateX(-50%);
       z-index:20; font:11px/1 'SF Mono',Consolas,monospace;
       color:rgba(255,255,255,.25); white-space:nowrap; pointer-events:none;
       transition:opacity .2s;
     }
-
-    /* Kbd hints */
-    #keys { position:fixed; bottom:80px; right:20px; z-index:20;
+    #keys { position:fixed; bottom:234px; right:20px; z-index:20;
             font:10px/2.1 'SF Mono',Consolas,monospace; color:rgba(255,255,255,.15); text-align:right; }
     #keys kbd { border:1px solid rgba(255,255,255,.15); border-radius:3px; padding:0 4px; font:inherit; }
-
-    /* Empty hint */
     #hint { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
             z-index:5; text-align:center; pointer-events:none; transition:opacity .4s; }
     #hint h2 { font:700 40px/1 'SF Mono',Consolas,monospace; letter-spacing:.22em;
                color:rgba(255,255,255,.05); margin-bottom:14px; }
     #hint p { font:13px/2.2 'SF Mono',Consolas,monospace; color:rgba(255,255,255,.16); }
-
     body.dropping::after {
       content:'Drop to load into selected surface'; position:fixed; inset:0; z-index:50;
       display:flex; align-items:center; justify-content:center;
       font:700 20px/1 'SF Mono',Consolas,monospace; color:#00e5ff;
       background:rgba(0,229,255,.05); border:2px dashed rgba(0,229,255,.35); pointer-events:none;
     }
+
+    /* ── Grid overlay ───────────────────────────── */
+    #grid {
+      position:fixed; inset:0; z-index:1; pointer-events:none; display:none;
+      background-image:
+        linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
+      background-size: 100px 100px, 100px 100px, 25px 25px, 25px 25px;
+    }
+
+    /* ── Projector calculator panel ─────────────── */
+    #proj-panel {
+      position:fixed; top:50px; right:20px; z-index:21;
+      width:216px;
+      background:var(--ui-bg); backdrop-filter:blur(18px);
+      border:1px solid rgba(255,255,255,.08); border-radius:10px;
+      overflow:hidden; box-shadow:0 4px 24px rgba(0,0,0,.45);
+      font:11px/1.4 'SF Mono',Consolas,monospace;
+    }
+    #proj-header {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:8px 12px; cursor:pointer; user-select:none;
+      color:rgba(255,255,255,.55); letter-spacing:.06em;
+      border-bottom:1px solid rgba(255,255,255,.07);
+      transition:background .12s;
+    }
+    #proj-header:hover { background:rgba(255,255,255,.05); color:rgba(255,255,255,.8); }
+    #proj-chevron { font-size:9px; opacity:.5; transition:transform .2s; }
+    #proj-panel.collapsed #proj-chevron { transform:rotate(-90deg); }
+    #proj-body { padding:10px 12px 13px; }
+    #proj-panel.collapsed #proj-body { display:none; }
+    .proj-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:7px; }
+    .proj-lbl { color:rgba(255,255,255,.38); font-size:10px; }
+    .proj-inp {
+      background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12);
+      color:rgba(255,255,255,.85); border-radius:5px; padding:3px 8px;
+      font:11px/1 'SF Mono',Consolas,monospace; width:88px; text-align:right; outline:none;
+    }
+    .proj-inp:focus { border-color:rgba(0,229,255,.4); }
+    .proj-div { height:1px; background:rgba(255,255,255,.07); margin:9px 0 8px; }
+    .proj-sec { color:rgba(255,255,255,.28); font-size:9px; letter-spacing:.12em;
+                text-transform:uppercase; margin-bottom:8px; }
+    .proj-out {
+      background:rgba(255,255,255,.04); border-radius:6px;
+      padding:7px 9px; color:rgba(255,255,255,.6); line-height:1.8; margin-top:2px;
+    }
+    .proj-out strong { color:#00e5ff; font-weight:600; }
+
+    /* ── Calibration overlay ────────────────────── */
+    #calib-overlay {
+      display:none; position:fixed; inset:0; z-index:200;
+      background:#000; cursor:none;
+    }
+    #calib-canvas { display:block; width:100%; height:100%; }
+    #calib-hint {
+      position:fixed; bottom:18px; right:22px;
+      font:11px/1 'SF Mono',Consolas,monospace; color:rgba(255,255,255,.18);
+      pointer-events:none; letter-spacing:.06em;
+    }
+
+    /* ── Camera / MediaPipe preview ─────────────── */
+    #cam-preview {
+      display:none; position:fixed; top:50px; left:20px; z-index:25;
+      width:164px; border-radius:9px; overflow:hidden;
+      border:1px solid rgba(255,255,255,.13);
+      box-shadow:0 4px 20px rgba(0,0,0,.6);
+      background:#000;
+    }
+    /* Pulsing red dot — recording indicator */
+    #cam-preview::before {
+      content:''; position:absolute; top:7px; right:8px; z-index:3;
+      width:7px; height:7px; border-radius:50%;
+      background:#ff3c3c; box-shadow:0 0 7px #ff3c3c;
+      animation: cam-pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes cam-pulse { 0%,100%{opacity:1} 50%{opacity:.2} }
+    #cam-video { display:block; width:100%; transform:scaleX(-1); }
+    #cam-tags {
+      position:absolute; bottom:6px; left:6px;
+      display:flex; gap:4px; pointer-events:none;
+    }
+    .cam-tag {
+      font:700 8px/1 'SF Mono',Consolas,monospace; letter-spacing:.08em;
+      padding:2px 5px; border-radius:3px;
+      background:rgba(0,0,0,.7); color:rgba(255,255,255,.28);
+      transition:color .15s, background .15s;
+    }
+    .cam-tag.on { color:#00e5ff; background:rgba(0,229,255,.2); }
+    /* Live effect readout — appears below the camera preview */
+    #mp-status {
+      position:fixed; top:220px; left:20px; z-index:24;
+      font:10px/1.6 'SF Mono',Consolas,monospace; letter-spacing:.04em;
+      color:rgba(0,229,255,.5); pointer-events:none;
+      display:none;
+    }
+
+    /* ── FX canvas ───────────────────────────────── */
+    #fx-canvas { position:fixed; inset:0; z-index:3; pointer-events:none; }
+
+    /* ── FX effects panel ────────────────────────── */
+    #fx-panel {
+      display:none; position:fixed; top:186px; left:20px; z-index:25;
+      width:164px; background:var(--ui-bg); backdrop-filter:blur(18px);
+      border:1px solid rgba(255,255,255,.08); border-radius:9px;
+      overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,.45);
+      font:11px/1.4 'SF Mono',Consolas,monospace;
+    }
+    #fx-header {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:7px 11px; cursor:pointer; user-select:none;
+      color:rgba(255,255,255,.55); letter-spacing:.06em;
+      border-bottom:1px solid rgba(255,255,255,.07);
+      transition:background .12s;
+    }
+    #fx-header:hover { background:rgba(255,255,255,.05); color:rgba(255,255,255,.8); }
+    #fx-chevron { font-size:9px; opacity:.5; transition:transform .2s; }
+    #fx-panel.collapsed #fx-chevron { transform:rotate(-90deg); }
+    #fx-body { padding:9px 11px 10px; }
+    #fx-panel.collapsed #fx-body { display:none; }
+    .fx-row {
+      display:flex; align-items:center; justify-content:space-between;
+      margin-bottom:8px;
+    }
+    .fx-row:last-child { margin-bottom:0; }
+    .fx-lbl { color:rgba(255,255,255,.42); font-size:10px; }
+    .fx-btn {
+      font:700 9px/1 'SF Mono',Consolas,monospace; letter-spacing:.07em;
+      padding:3px 9px; border-radius:4px; cursor:pointer; user-select:none;
+      border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.05);
+      color:rgba(255,255,255,.3); transition:all .12s;
+    }
+    .fx-btn:hover { background:rgba(255,255,255,.1); color:rgba(255,255,255,.65); }
+    .fx-btn.on { background:rgba(0,229,255,.12); border-color:rgba(0,229,255,.42); color:#00e5ff; }
+
+    /* ── Surface playlist panel ──────────────────── */
+    #surf-panel {
+      display:none; position:fixed; top:50px; right:246px; z-index:21;
+      width:224px; background:var(--ui-bg); backdrop-filter:blur(18px);
+      border:1px solid rgba(255,255,255,.08); border-radius:10px;
+      overflow:hidden; box-shadow:0 4px 24px rgba(0,0,0,.45);
+      font:11px/1.4 'SF Mono',Consolas,monospace;
+    }
+    #surf-panel-header {
+      display:flex; align-items:center; gap:6px;
+      padding:8px 12px; user-select:none;
+      border-bottom:1px solid rgba(255,255,255,.07);
+    }
+    #surf-panel-title {
+      flex:1; font-size:10px; letter-spacing:.1em; text-transform:uppercase;
+      color:rgba(255,255,255,.38);
+    }
+    #surf-panel-add {
+      font-size:18px; line-height:1; cursor:pointer; color:rgba(255,255,255,.25);
+      padding:0 2px; transition:color .12s;
+    }
+    #surf-panel-add:hover { color:#00e5ff; }
+    #pl-list { max-height:190px; overflow-y:auto; }
+    #pl-list:empty::before {
+      content:'No clips — presiona + para agregar'; display:block;
+      padding:12px; color:rgba(255,255,255,.18); font-size:10px; text-align:center;
+    }
+    .pl-item {
+      display:flex; align-items:center; gap:5px;
+      padding:5px 10px 5px 12px; cursor:pointer; user-select:none;
+      border-left:2px solid transparent; transition:background .1s;
+    }
+    .pl-item:hover { background:rgba(255,255,255,.05); }
+    .pl-item.active { background:rgba(0,229,255,.06); border-left-color:#00e5ff; }
+    .pl-item-icon { font-size:10px; flex-shrink:0; opacity:.5; min-width:12px; }
+    .pl-item-name {
+      flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+      color:rgba(255,255,255,.55); font-size:10px;
+    }
+    .pl-item.active .pl-item-name { color:#00e5ff; }
+    .pl-item-loop {
+      font-size:10px; padding:1px 5px; border-radius:3px; cursor:pointer; flex-shrink:0;
+      border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.04);
+      color:rgba(255,255,255,.22); transition:all .12s; user-select:none;
+    }
+    .pl-item-loop.on { border-color:rgba(0,229,255,.3); background:rgba(0,229,255,.07); color:rgba(0,229,255,.65); }
+    .pl-item-del {
+      font-size:9px; opacity:0; padding:2px 5px; border-radius:3px; cursor:pointer; flex-shrink:0;
+      color:rgba(255,80,80,.5); transition:opacity .12s; user-select:none;
+    }
+    .pl-item:hover .pl-item-del { opacity:1; }
+    .pl-controls {
+      display:flex; align-items:center; gap:5px;
+      padding:7px 10px; border-top:1px solid rgba(255,255,255,.07);
+    }
+    .pl-ctrl-btn {
+      background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1);
+      color:rgba(255,255,255,.45); padding:4px 8px; border-radius:6px;
+      cursor:pointer; font:11px/1 'SF Mono',Consolas,monospace;
+      transition:background .12s, color .12s; user-select:none; white-space:nowrap;
+    }
+    .pl-ctrl-btn:hover { background:rgba(255,255,255,.12); color:#fff; }
+    #pl-btn-play { flex:1; text-align:center; }
+
+    /* ── Panel drag hint (all floating panels) ───── */
+    .panel-grip {
+      font-size:12px; color:rgba(255,255,255,.18); flex-shrink:0; cursor:grab;
+      letter-spacing:-3px; user-select:none;
+    }
+    .panel-grip:active { cursor:grabbing; }
+
+    /* ── Scene timeline ──────────────────────────── */
+    #timeline {
+      position:fixed; bottom:70px; left:50%; transform:translateX(-50%);
+      z-index:20; display:flex; align-items:center; height:44px;
+      max-width:calc(100vw - 40px); min-width:320px;
+      background:var(--ui-bg); backdrop-filter:blur(18px);
+      border:1px solid rgba(255,255,255,.08); border-radius:10px;
+      box-shadow:0 2px 20px rgba(0,0,0,.4);
+      font:11px/1 'SF Mono',Consolas,monospace;
+      overflow:hidden;
+    }
+    #tl-progress-bar {
+      position:absolute; bottom:0; left:0; height:2px;
+      width:0%; background:#a78bfa; pointer-events:none; z-index:1;
+    }
+    #tl-fade {
+      display:flex; align-items:center; gap:5px;
+      padding:0 10px; flex-shrink:0; height:100%;
+      border-right:1px solid rgba(255,255,255,.07);
+    }
+    .tl-label {
+      font-size:10px; color:rgba(255,255,255,.22);
+      letter-spacing:.07em; flex-shrink:0;
+    }
+    #scene-tr {
+      width:52px; height:3px; -webkit-appearance:none; appearance:none;
+      background:rgba(255,255,255,.12); border-radius:2px;
+      cursor:pointer; outline:none; flex-shrink:0;
+    }
+    #scene-tr::-webkit-slider-thumb {
+      -webkit-appearance:none; width:10px; height:10px;
+      border-radius:50%; background:#a78bfa; cursor:pointer;
+    }
+    #scene-tr-val {
+      font-size:10px; color:rgba(167,139,250,.65);
+      min-width:26px; flex-shrink:0;
+    }
+    #timeline-track {
+      display:flex; align-items:center; gap:4px;
+      padding:0 8px; flex:1; min-width:0; height:100%;
+      overflow-x:auto; overflow-y:hidden;
+      scrollbar-width:none;
+    }
+    #timeline-track::-webkit-scrollbar { display:none; }
+    #timeline-track:empty::before {
+      content:'Presiona + para capturar la primera escena';
+      font-size:10px; color:rgba(255,255,255,.16);
+      white-space:nowrap; pointer-events:none;
+    }
+    .tl-scene {
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      min-width:62px; height:30px; flex-shrink:0;
+      border-radius:5px; border:1px solid rgba(255,255,255,.1);
+      background:rgba(255,255,255,.04); cursor:pointer; user-select:none;
+      padding:3px 9px; position:relative;
+      transition:background .1s, border-color .1s;
+    }
+    .tl-scene:hover { background:rgba(255,255,255,.09); border-color:rgba(255,255,255,.22); }
+    .tl-scene.active {
+      background:rgba(167,139,250,.13); border-color:#a78bfa;
+      box-shadow:0 0 8px rgba(167,139,250,.25);
+    }
+    .tl-scene.tl-over { border-color:rgba(0,229,255,.55); background:rgba(0,229,255,.07); }
+    .tl-num {
+      font-size:9px; font-weight:700; letter-spacing:.08em;
+      color:rgba(255,255,255,.2); pointer-events:none;
+    }
+    .tl-scene.active .tl-num { color:rgba(167,139,250,.85); }
+    .tl-name {
+      font-size:10px; color:rgba(255,255,255,.48);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      max-width:88px; margin-top:2px; pointer-events:none;
+      min-height:12px; outline:none;
+    }
+    .tl-scene.active .tl-name { color:#fff; }
+    .tl-name[contenteditable="true"] {
+      pointer-events:auto; border-bottom:1px solid rgba(167,139,250,.6);
+      color:#fff; min-width:40px;
+    }
+    #timeline-add {
+      display:flex; align-items:center; justify-content:center;
+      flex-shrink:0; height:100%; padding:0 12px;
+      border-left:1px solid rgba(255,255,255,.07);
+      font-size:19px; line-height:1; cursor:pointer;
+      color:rgba(255,255,255,.18); transition:color .12s;
+    }
+    #timeline-add:hover { color:#a78bfa; }
   </style>
 </head>
 <body>
-  <div id="logo">Map<em>R</em></div>
-  <div id="status">No surface selected</div>
-  <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
-
-  <div id="hint"><h2>MAPR</h2>
-    <p>Click <strong>+ Quad</strong> or <strong>+ Circle</strong> to add a surface</p>
-    <p>Drag nodes to warp · Click an edge to add a node · Right-click a node to remove it</p>
+  <!-- Calibration overlay -->
+  <div id="calib-overlay">
+    <canvas id="calib-canvas"></canvas>
+    <div id="calib-hint">ESC &mdash; cerrar</div>
   </div>
 
+  <!-- Camera preview (MediaPipe) -->
+  <div id="cam-preview">
+    <div id="cam-drag-bar" style="position:absolute;top:0;left:0;right:0;height:16px;z-index:4;cursor:grab;background:linear-gradient(rgba(0,0,0,.4),transparent);display:flex;align-items:center;justify-content:center;"><span style="color:rgba(255,255,255,.25);font-size:10px;letter-spacing:-2px;">&#x28BF;</span></div>
+    <video id="cam-video" autoplay muted playsinline></video>
+    <div id="cam-tags">
+      <span class="cam-tag" id="cam-tag-hand">HAND</span>
+      <span class="cam-tag" id="cam-tag-pose">BODY</span>
+    </div>
+  </div>
+  <div id="mp-status"></div>
+
+  <!-- FX effects canvas (2-D overlay for waves, color, particles) -->
+  <canvas id="fx-canvas"></canvas>
+
+  <!-- FX effects panel -->
+  <div id="fx-panel">
+    <div id="fx-header">
+      <span class="panel-grip">&#x28BF;</span>
+      <span>&#9889;&ensp;Efectos MP</span>
+      <span id="fx-chevron">&#9660;</span>
+    </div>
+    <div id="fx-body">
+      <div class="fx-row">
+        <span class="fx-lbl">Ondas</span>
+        <button class="fx-btn on" id="fx-btn-waves">ON</button>
+      </div>
+      <div class="fx-row">
+        <span class="fx-lbl">Color</span>
+        <button class="fx-btn on" id="fx-btn-color">ON</button>
+      </div>
+      <div class="fx-row">
+        <span class="fx-lbl">Part&iacute;culas</span>
+        <button class="fx-btn on" id="fx-btn-particles">ON</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scene timeline -->
+  <div id="timeline">
+    <div id="tl-progress-bar"></div>
+    <div id="tl-fade">
+      <span class="tl-label">fade</span>
+      <input id="scene-tr" type="range" min="0" max="2" step="0.1" value="0.5">
+      <span id="scene-tr-val">0.5s</span>
+    </div>
+    <div id="timeline-track"></div>
+    <span id="timeline-add" title="Capturar escena">+</span>
+  </div>
+
+  <!-- Surface playlist panel -->
+  <div id="surf-panel">
+    <div id="surf-panel-header">
+      <span class="panel-grip">&#x28BF;</span>
+      <span id="surf-panel-title">&#9654; Playlist</span>
+      <span id="surf-panel-add" title="Agregar clip">&#43;</span>
+    </div>
+    <div id="pl-list"></div>
+    <div class="pl-controls">
+      <button class="pl-ctrl-btn" id="pl-btn-prev">&#9664;&#9664;</button>
+      <button class="pl-ctrl-btn" id="pl-btn-play">&#9654; Play</button>
+      <button class="pl-ctrl-btn" id="pl-btn-next">&#9654;&#9654;</button>
+    </div>
+  </div>
+  <input type="file" id="pl-input" accept="image/*,video/*" multiple style="display:none">
+
+  <div id="logo">Map<em>R</em></div>
+  <div id="status">No surface selected</div>
+  <div id="grid"></div>
+  <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+
+  <!-- Projector calculator -->
+  <div id="proj-panel" class="collapsed">
+    <div id="proj-header">
+      <span class="panel-grip">&#x28BF;</span>
+      <span>&#128247;&ensp;Proyector</span>
+      <span id="proj-chevron">&#9660;</span>
+    </div>
+    <div id="proj-body">
+      <div class="proj-row">
+        <span class="proj-lbl">Throw Ratio</span>
+        <input class="proj-inp" type="number" id="pc-tr" value="1.5" step="0.1" min="0.1">
+      </div>
+      <div class="proj-row">
+        <span class="proj-lbl">Aspecto</span>
+        <select class="proj-inp" id="pc-ar">
+          <option value="1.7778">16 : 9</option>
+          <option value="1.3333">4 : 3</option>
+          <option value="2.3529">21 : 9</option>
+          <option value="1">1 : 1</option>
+        </select>
+      </div>
+
+      <div class="proj-div"></div>
+      <div class="proj-sec">&#9656; Ancho &rarr; Distancia</div>
+      <div class="proj-row">
+        <span class="proj-lbl">Ancho sup. (cm)</span>
+        <input class="proj-inp" type="number" id="pc-w" value="200" step="1" min="1">
+      </div>
+      <div class="proj-out" id="pc-out-fwd">&mdash;</div>
+
+      <div class="proj-div"></div>
+      <div class="proj-sec">&#9656; Distancia &rarr; Imagen</div>
+      <div class="proj-row">
+        <span class="proj-lbl">Distancia (cm)</span>
+        <input class="proj-inp" type="number" id="pc-d" value="300" step="1" min="1">
+      </div>
+      <div class="proj-out" id="pc-out-inv">&mdash;</div>
+    </div>
+  </div>
+
+  <div id="hint"><h2>MAPR</h2>
+    <p>Click <strong>+ Quad</strong>, <strong>+ Circle</strong> or <strong>&#9998; Draw</strong> to add a surface</p>
+    <p>Drag nodes to warp &middot; Click an edge to add a node &middot; Right-click a node to remove it</p>
+  </div>
+
+  <div id="slices"></div>
   <div id="surfaces"></div>
 
-  <div id="node-tip">Click edge → add node &nbsp;·&nbsp; Right-click / Alt+click / Hold → delete node</div>
+  <div id="node-tip">Click edge &#8594; add node &nbsp;&middot;&nbsp; Right-click / Alt+click / Hold &#8594; delete node</div>
 
   <div id="ui">
+    <button class="btn" id="btn-save">&#128190; Save</button>
+    <label class="file-label" for="proj-input">&#128193; Open</label>
+    <input type="file" id="proj-input" accept=".mapr,.json">
+    <div class="sep"></div>
     <label class="file-label" for="file-input">&#9654;&ensp;Load Media</label>
-    <input type="file" id="file-input" accept="image/*,video/*">
+    <input type="file" id="file-input" accept="image/*,video/*" multiple>
+    <button class="btn" id="btn-next-all">&#9654;&#9654;&ensp;Next All</button>
     <div class="sep"></div>
     <button class="btn" id="btn-quad">+ Quad</button>
     <button class="btn" id="btn-circle">+ Circle</button>
-    <button class="btn danger" id="btn-del">✕ Delete</button>
+    <button class="btn" id="btn-draw">&#9998; Draw</button>
+    <button class="btn danger" id="btn-del">&#10005; Delete</button>
     <div class="sep"></div>
     <button class="btn on" id="btn-handles">Handles</button>
     <button class="btn" id="btn-wire">Wireframe</button>
+    <button class="btn" id="btn-grid">Grid</button>
     <div class="sep"></div>
     <button class="btn" id="btn-fs">&#x26F6;&ensp;Fullscreen</button>
+    <button class="btn" id="btn-calib">&#11042;&ensp;Calibrar</button>
+    <button class="btn" id="btn-cam">&#128247;&ensp;C&aacute;mara</button>
   </div>
 
   <div id="keys">
-    <kbd>H</kbd> handles &nbsp;<kbd>W</kbd> wire &nbsp;<kbd>R</kbd> reset
-    &nbsp;<kbd>N</kbd> quad &nbsp;<kbd>C</kbd> circle &nbsp;<kbd>Del</kbd> delete
-    &nbsp;<kbd>Tab</kbd> cycle &nbsp;<kbd>F</kbd> fullscreen
+    <kbd>H</kbd> handles &nbsp;<kbd>W</kbd> wire &nbsp;<kbd>G</kbd> grid &nbsp;<kbd>R</kbd> reset
+    &nbsp;<kbd>N</kbd> quad &nbsp;<kbd>C</kbd> circle &nbsp;<kbd>D</kbd> draw
+    &nbsp;<kbd>Del</kbd> delete &nbsp;<kbd>Tab</kbd> cycle &nbsp;<kbd>F</kbd> fullscreen
+    &nbsp;<kbd>Ctrl+S</kbd> save &nbsp;<kbd>Esc</kbd> cancel draw
+    &nbsp;<kbd>Space</kbd> siguiente escena
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
@@ -212,83 +645,57 @@
   function cross2D(ax,ay, bx,by, cx,cy) {
     return (bx-ax)*(cy-ay) - (by-ay)*(cx-ax);
   }
-
   function ptInTri(px,py, ax,ay, bx,by, cx,cy) {
-    const d1 = cross2D(ax,ay,bx,by,px,py);
-    const d2 = cross2D(bx,by,cx,cy,px,py);
-    const d3 = cross2D(cx,cy,ax,ay,px,py);
-    const neg = d1<0||d2<0||d3<0, pos = d1>0||d2>0||d3>0;
+    const d1=cross2D(ax,ay,bx,by,px,py), d2=cross2D(bx,by,cx,cy,px,py), d3=cross2D(cx,cy,ax,ay,px,py);
+    const neg=d1<0||d2<0||d3<0, pos=d1>0||d2>0||d3>0;
     return !(neg&&pos);
   }
 
-  /* Ear-clipping triangulation — works for convex and concave polygons */
   function earClip(nodes) {
     const n = nodes.length;
     if (n < 3) return [];
-
-    // Compute signed area (shoelace)
     let area = 0;
-    for (let i=0; i<n; i++) {
-      const j = (i+1)%n;
-      area += nodes[i].x*nodes[j].y - nodes[j].x*nodes[i].y;
-    }
-
-    // Working index list; reverse if CW so we process CCW
-    const idxList = Array.from({length:n}, (_,i) => i);
+    for (let i=0; i<n; i++) { const j=(i+1)%n; area+=nodes[i].x*nodes[j].y-nodes[j].x*nodes[i].y; }
+    const idxList = Array.from({length:n},(_,i)=>i);
     if (area < 0) idxList.reverse();
-
     const result = [];
-    let guard = n*n + 20, cur = 0;
-
+    let guard = n*n+20, cur = 0;
     while (idxList.length > 3 && guard-- > 0) {
-      const len  = idxList.length;
-      const pi   = (cur-1+len)%len;
-      const ni   = (cur+1)%len;
-      const A = nodes[idxList[pi]];
-      const B = nodes[idxList[cur]];
-      const C = nodes[idxList[ni]];
-
-      // Convex ear?
-      if (cross2D(A.x,A.y, B.x,B.y, C.x,C.y) > 1e-9) {
-        let isEar = true;
-        for (let j=0; j<len && isEar; j++) {
+      const len=idxList.length, pi=(cur-1+len)%len, ni=(cur+1)%len;
+      const A=nodes[idxList[pi]], B=nodes[idxList[cur]], C=nodes[idxList[ni]];
+      if (cross2D(A.x,A.y,B.x,B.y,C.x,C.y) > 1e-9) {
+        let isEar=true;
+        for (let j=0; j<len&&isEar; j++) {
           if (j===pi||j===cur||j===ni) continue;
-          const P = nodes[idxList[j]];
-          if (ptInTri(P.x,P.y, A.x,A.y, B.x,B.y, C.x,C.y)) isEar = false;
+          if (ptInTri(nodes[idxList[j]].x,nodes[idxList[j]].y,A.x,A.y,B.x,B.y,C.x,C.y)) isEar=false;
         }
         if (isEar) {
-          result.push([idxList[pi], idxList[cur], idxList[ni]]);
-          idxList.splice(cur, 1);
-          cur = Math.max(0, cur-1) % idxList.length;
+          result.push([idxList[pi],idxList[cur],idxList[ni]]);
+          idxList.splice(cur,1);
+          cur=Math.max(0,cur-1)%idxList.length;
           continue;
         }
       }
-      cur = (cur+1) % idxList.length;
+      cur=(cur+1)%idxList.length;
     }
-
-    if (idxList.length === 3) result.push([idxList[0], idxList[1], idxList[2]]);
+    if (idxList.length===3) result.push([idxList[0],idxList[1],idxList[2]]);
     return result;
   }
 
-  /* Midpoint with UV interpolation */
-  function mid(a, b) {
-    return { x:(a.x+b.x)/2, y:(a.y+b.y)/2, u:(a.u+b.u)/2, v:(a.v+b.v)/2 };
-  }
+  function mid(a,b) { return {x:(a.x+b.x)/2,y:(a.y+b.y)/2,u:(a.u+b.u)/2,v:(a.v+b.v)/2}; }
 
-  /* Recursive triangle subdivision — fills positions[], uvs[], indices[] */
-  function subdivTri(v0,v1,v2, positions,uvs,indices, depth) {
-    if (depth === 0) {
-      const base = positions.length/3;
+  function subdivTri(v0,v1,v2,positions,uvs,indices,depth) {
+    if (depth===0) {
+      const base=positions.length/3;
       positions.push(v0.x,v0.y,0, v1.x,v1.y,0, v2.x,v2.y,0);
       uvs.push(v0.u,v0.v, v1.u,v1.v, v2.u,v2.v);
-      indices.push(base, base+1, base+2);
-      return;
+      indices.push(base,base+1,base+2); return;
     }
     const m01=mid(v0,v1), m12=mid(v1,v2), m20=mid(v2,v0);
-    subdivTri(v0,m01,m20, positions,uvs,indices, depth-1);
-    subdivTri(m01,v1,m12, positions,uvs,indices, depth-1);
-    subdivTri(m20,m12,v2, positions,uvs,indices, depth-1);
-    subdivTri(m01,m12,m20, positions,uvs,indices, depth-1);
+    subdivTri(v0,m01,m20,positions,uvs,indices,depth-1);
+    subdivTri(m01,v1,m12,positions,uvs,indices,depth-1);
+    subdivTri(m20,m12,v2,positions,uvs,indices,depth-1);
+    subdivTri(m01,m12,m20,positions,uvs,indices,depth-1);
   }
 
   /* ══════════════════════════════════════════════════
@@ -297,28 +704,25 @@
   const PALETTE = ['#00e5ff','#ff6b35','#7fff00','#ff3cac','#ffe600','#a78bfa','#ff4444','#00ff9f'];
   const SVG_NS  = 'http://www.w3.org/2000/svg';
   const svgRoot = document.getElementById('overlay');
-
   let _seq = 0;
 
-  function hexRgba(hex, a) {
-    const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  function hexRgba(hex,a) {
+    const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
     return `rgba(${r},${g},${b},${a})`;
   }
 
   class Surface {
-    constructor(nodes) {
+    constructor(nodes, color=null) {
       this.id    = _seq++;
-      this.color = PALETTE[this.id % PALETTE.length];
-      // nodes: [{x,y,u,v}] in screen pixels + texture UV
+      this.color = color || PALETTE[this.id % PALETTE.length];
       this.nodes = nodes;
 
-      /* Three.js objects */
       this.geo = new THREE.BufferGeometry();
       this.mat = new THREE.MeshBasicMaterial({
         color:0x1a1a2e, side:THREE.DoubleSide, depthTest:false, depthWrite:false,
       });
       this.wireMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(this.color), wireframe:true,
+        color:new THREE.Color(this.color), wireframe:true,
         transparent:true, opacity:0.18, depthTest:false, depthWrite:false,
       });
       this.mesh     = new THREE.Mesh(this.geo, this.mat);
@@ -332,10 +736,13 @@
       this._label  = 'No media';
       this._sel    = false;
 
-      /* SVG group */
-      this.svgGroup = document.createElementNS(SVG_NS,'g');
-      svgRoot.appendChild(this.svgGroup);
+      this.playlist = [];   // [{id,name,type,url,loop,_tex,_vid}]
+      this.plIdx    = -1;   // index of active clip
+      this.playing  = false;
+      this._plSeq   = 0;
 
+      this.svgGroup   = document.createElementNS(SVG_NS,'g');
+      svgRoot.appendChild(this.svgGroup);
       this.handleEls  = [];
       this.edgeHitEls = [];
       this.edgeVisEls = [];
@@ -344,61 +751,45 @@
       this.rebuildGeometry();
     }
 
-    /* ── Selection ─────────────────────────────── */
     get selected() { return this._sel; }
     set selected(v) {
       this._sel = v;
-      this.handleEls.forEach(h => h.classList.toggle('sel', v));
+      this.handleEls.forEach(h=>h.classList.toggle('sel',v));
       this._updateSVGStyle();
       this.mesh.renderOrder     = v ? 999 : this.id*2;
       this.wireMesh.renderOrder = v ? 1000: this.id*2+1;
     }
 
     _updateSVGStyle() {
-      const a = this._sel ? 0.7 : 0.35;
-      this.edgeVisEls.forEach(l => l.setAttribute('stroke', hexRgba(this.color, a)));
+      const a=this._sel?0.7:0.35;
+      this.edgeVisEls.forEach(l=>l.setAttribute('stroke',hexRgba(this.color,a)));
     }
 
-    /* ── Build/rebuild DOM handles and SVG edges ─ */
     _buildDOM() {
-      // Clear existing
-      this.handleEls.forEach(h => h.remove());
-      this.handleEls = [];
+      this.handleEls.forEach(h=>h.remove());
+      this.handleEls=[];
       while (this.svgGroup.firstChild) this.svgGroup.removeChild(this.svgGroup.firstChild);
-      this.edgeHitEls = [];
-      this.edgeVisEls = [];
+      this.edgeHitEls=[]; this.edgeVisEls=[];
 
-      // One handle per node
-      this.nodes.forEach((_, i) => {
-        const h = document.createElement('div');
-        h.className = 'handle';
-        h.dataset.sid = this.id;
-        h.dataset.ni  = i;
-        h.style.setProperty('--c', this.color);
-        h.innerHTML = '<span class="del-badge">✕</span>';
+      this.nodes.forEach((_,i)=>{
+        const h=document.createElement('div');
+        h.className='handle'; h.dataset.sid=this.id; h.dataset.ni=i;
+        h.style.setProperty('--c',this.color);
+        h.innerHTML='<span class="del-badge">&#10005;</span>';
         if (!showHandles) h.classList.add('hidden');
         document.body.appendChild(h);
         this.handleEls.push(h);
       });
 
-      // One edge per node pair (node[i] → node[(i+1)%n])
-      this.nodes.forEach((_, i) => {
-        // Invisible hit line
-        const hit = document.createElementNS(SVG_NS,'line');
-        hit.classList.add('edge-hit');
-        hit.dataset.sid  = this.id;
-        hit.dataset.edge = i;
-        this.svgGroup.appendChild(hit);
-        this.edgeHitEls.push(hit);
+      this.nodes.forEach((_,i)=>{
+        const hit=document.createElementNS(SVG_NS,'line');
+        hit.classList.add('edge-hit'); hit.dataset.sid=this.id; hit.dataset.edge=i;
+        this.svgGroup.appendChild(hit); this.edgeHitEls.push(hit);
 
-        // Visible line
-        const vis = document.createElementNS(SVG_NS,'line');
-        vis.setAttribute('stroke-width','1.5');
-        vis.setAttribute('stroke-dasharray','5 3');
-        vis.setAttribute('fill','none');
-        vis.setAttribute('stroke-opacity', showHandles ? '1' : '0');
-        this.svgGroup.appendChild(vis);
-        this.edgeVisEls.push(vis);
+        const vis=document.createElementNS(SVG_NS,'line');
+        vis.setAttribute('stroke-width','1.5'); vis.setAttribute('stroke-dasharray','5 3');
+        vis.setAttribute('fill','none'); vis.setAttribute('stroke-opacity',showHandles?'1':'0');
+        this.svgGroup.appendChild(vis); this.edgeVisEls.push(vis);
       });
 
       this._updateSVGStyle();
@@ -406,135 +797,206 @@
     }
 
     _updateHandlePositions() {
-      this.nodes.forEach(({x,y}, i) => {
-        const h = this.handleEls[i];
-        if (h) { h.style.left = x+'px'; h.style.top = y+'px'; }
-
-        const j = (i+1) % this.nodes.length;
-        const nx = this.nodes[j].x, ny = this.nodes[j].y;
+      this.nodes.forEach(({x,y},i)=>{
+        const h=this.handleEls[i];
+        if (h) { h.style.left=x+'px'; h.style.top=y+'px'; }
+        const j=(i+1)%this.nodes.length, nx=this.nodes[j].x, ny=this.nodes[j].y;
         if (this.edgeHitEls[i]) {
           this.edgeHitEls[i].setAttribute('x1',x); this.edgeHitEls[i].setAttribute('y1',y);
           this.edgeHitEls[i].setAttribute('x2',nx); this.edgeHitEls[i].setAttribute('y2',ny);
-          this.edgeVisEls[i].setAttribute('x1',x);  this.edgeVisEls[i].setAttribute('y1',y);
-          this.edgeVisEls[i].setAttribute('x2',nx);  this.edgeVisEls[i].setAttribute('y2',ny);
+          this.edgeVisEls[i].setAttribute('x1',x); this.edgeVisEls[i].setAttribute('y1',y);
+          this.edgeVisEls[i].setAttribute('x2',nx); this.edgeVisEls[i].setAttribute('y2',ny);
         }
       });
     }
 
-    /* ── Geometry rebuild ───────────────────────── */
     rebuildGeometry() {
-      const { nodes } = this;
-      if (nodes.length < 3) return;
-
-      const tris      = earClip(nodes);
-      const positions = [], uvs = [], indices = [];
-
-      // Auto-select subdivision depth by polygon size
-      const srcTriCount = tris.length;
-      const depth = srcTriCount <= 6 ? 3 : srcTriCount <= 20 ? 2 : 1;
-
+      const {nodes}=this;
+      if (nodes.length<3) return;
+      const tris=earClip(nodes), positions=[],uvs=[],indices=[];
+      const depth=tris.length<=6?3:tris.length<=20?2:1;
       for (const [ai,bi,ci] of tris) {
-        const a = nodes[ai], b = nodes[bi], c = nodes[ci];
+        const a=nodes[ai],b=nodes[bi],c=nodes[ci];
         subdivTri(
-          {x:ndcX(a.x), y:ndcY(a.y), u:a.u, v:a.v},
-          {x:ndcX(b.x), y:ndcY(b.y), u:b.u, v:b.v},
-          {x:ndcX(c.x), y:ndcY(c.y), u:c.u, v:c.v},
-          positions, uvs, indices, depth
+          {x:ndcX(a.x),y:ndcY(a.y),u:a.u,v:a.v},
+          {x:ndcX(b.x),y:ndcY(b.y),u:b.u,v:b.v},
+          {x:ndcX(c.x),y:ndcY(c.y),u:c.u,v:c.v},
+          positions,uvs,indices,depth
         );
       }
-
-      this.geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-      this.geo.setAttribute('uv',       new THREE.BufferAttribute(new Float32Array(uvs), 2));
+      this.geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(positions),3));
+      this.geo.setAttribute('uv',new THREE.BufferAttribute(new Float32Array(uvs),2));
       this.geo.setIndex(indices);
       this.geo.computeBoundingSphere();
     }
 
-    /* ── Refresh (mesh + handles) ───────────────── */
-    refresh() {
-      this.rebuildGeometry();
-      this._updateHandlePositions();
+    refresh() { this.rebuildGeometry(); this._updateHandlePositions(); }
+
+    addNodeOnEdge(edgeIdx,sx,sy) {
+      const i=edgeIdx, j=(i+1)%this.nodes.length, ni=this.nodes[i], nj=this.nodes[j];
+      const dx=nj.x-ni.x, dy=nj.y-ni.y, len2=dx*dx+dy*dy;
+      const t=len2<1e-9?0.5:Math.max(0,Math.min(1,((sx-ni.x)*dx+(sy-ni.y)*dy)/len2));
+      this.nodes.splice(j,0,{x:ni.x+t*dx,y:ni.y+t*dy,u:ni.u+t*(nj.u-ni.u),v:ni.v+t*(nj.v-ni.v)});
+      this._buildDOM(); this.rebuildGeometry();
     }
 
-    /* ── Add node on edge at screen pos (sx,sy) ── */
-    addNodeOnEdge(edgeIdx, sx, sy) {
-      const i  = edgeIdx;
-      const j  = (i+1) % this.nodes.length;
-      const ni = this.nodes[i], nj = this.nodes[j];
-
-      // Compute t along edge
-      const dx=nj.x-ni.x, dy=nj.y-ni.y;
-      const len2 = dx*dx+dy*dy;
-      const t = len2 < 1e-9 ? 0.5
-        : Math.max(0, Math.min(1, ((sx-ni.x)*dx+(sy-ni.y)*dy)/len2));
-
-      const newNode = {
-        x: ni.x + t*dx,
-        y: ni.y + t*dy,
-        u: ni.u + t*(nj.u-ni.u),
-        v: ni.v + t*(nj.v-ni.v),
-      };
-
-      this.nodes.splice(j, 0, newNode);
-      this._buildDOM();
-      this.rebuildGeometry();
-    }
-
-    /* ── Remove node by index ───────────────────── */
     removeNode(idx) {
-      if (this.nodes.length <= 3) return; // minimum triangle
-      this.nodes.splice(idx, 1);
-      this._buildDOM();
-      this.rebuildGeometry();
+      if (this.nodes.length<=3) return;
+      this.nodes.splice(idx,1); this._buildDOM(); this.rebuildGeometry();
     }
 
-    /* ── Reset corners ──────────────────────────── */
-    reset() {
-      this.nodes = defaultQuadNodes(this.id);
-      this._buildDOM();
-      this.rebuildGeometry();
-    }
+    reset() { this.nodes=defaultQuadNodes(this.id); this._buildDOM(); this.rebuildGeometry(); }
 
-    /* ── Media ──────────────────────────────────── */
-    loadMedia(file) {
-      const url=URL.createObjectURL(file), isVid=file.type.startsWith('video/');
-      if (this.video)   { this.video.pause(); this.video.src=''; this.video=null; }
-      if (this.texture) { this.texture.dispose(); this.texture=null; }
+    /* ── Playlist API ──────────────────────────────── */
 
+    addClip(file) {
+      const url = URL.createObjectURL(file);
+      const isVid = file.type.startsWith('video/');
+      const clip = {
+        id: this._plSeq++, name: file.name,
+        type: isVid ? 'video' : 'image',
+        url, loop: true, _tex: null, _vid: null,
+      };
+      this.playlist.push(clip);
+      const newIdx = this.playlist.length - 1;
       if (isVid) {
-        const vid=document.createElement('video');
-        Object.assign(vid,{src:url,loop:true,muted:true,autoplay:true,playsInline:true});
-        vid.play().catch(()=>{});
-        this.video=vid;
-        const tex=new THREE.VideoTexture(vid);
-        tex.minFilter=tex.magFilter=THREE.LinearFilter;
-        this._applyTex(tex, '▶ '+file.name);
+        const vid = document.createElement('video');
+        Object.assign(vid, { src:url, loop:true, muted:true, playsInline:true });
+        clip._vid = vid;
+        if (this.plIdx < 0) this.activateClip(newIdx);
+        else updateSurfPanel();
       } else {
-        new THREE.TextureLoader().load(url, tex=>{
-          tex.colorSpace=THREE.SRGBColorSpace;
-          this._applyTex(tex, '◼ '+file.name);
+        new THREE.TextureLoader().load(url, tex => {
+          tex.colorSpace = THREE.SRGBColorSpace;
+          clip._tex = tex;
+          if (this.plIdx < 0) this.activateClip(newIdx);
+          else updateSurfPanel();
         });
+        updateSurfPanel();
       }
     }
 
-    _applyTex(tex, label) {
+    activateClip(idx) {
+      if (idx < 0 || idx >= this.playlist.length) return;
+      // Pause previous video
+      const old = this.playlist[this.plIdx];
+      if (old && old._vid) old._vid.pause();
+
+      this.plIdx = idx;
+      const clip = this.playlist[idx];
+
+      if (clip.type === 'video') {
+        if (!clip._tex) {
+          const tex = new THREE.VideoTexture(clip._vid);
+          tex.minFilter = tex.magFilter = THREE.LinearFilter;
+          clip._tex = tex;
+        }
+        clip._vid.loop = clip.loop;
+        if (this.playing) clip._vid.play().catch(() => {});
+        this.video = clip._vid;
+        this._applyTex(clip._tex, '\u25B6 ' + clip.name);
+      } else if (clip._tex) {
+        this.video = null;
+        this._applyTex(clip._tex, '\u25AA ' + clip.name);
+      }
+      updateSurfPanel();
+    }
+
+    prevClip() {
+      if (!this.playlist.length) return;
+      this.activateClip(this.plIdx <= 0 ? this.playlist.length - 1 : this.plIdx - 1);
+    }
+
+    nextClip() {
+      if (!this.playlist.length) return;
+      this.activateClip((this.plIdx + 1) % this.playlist.length);
+    }
+
+    playClip() {
+      this.playing = true;
+      const clip = this.playlist[this.plIdx];
+      if (clip && clip._vid) clip._vid.play().catch(() => {});
+      updateSurfPanel();
+    }
+
+    pauseClip() {
+      this.playing = false;
+      const clip = this.playlist[this.plIdx];
+      if (clip && clip._vid) clip._vid.pause();
+      updateSurfPanel();
+    }
+
+    removeClip(idx) {
+      if (idx < 0 || idx >= this.playlist.length) return;
+      const clip = this.playlist[idx];
+      const wasActive = idx === this.plIdx;
+      if (clip._vid) { clip._vid.pause(); clip._vid.src = ''; }
+      if (clip._tex) clip._tex.dispose();
+      try { URL.revokeObjectURL(clip.url); } catch(e) {}
+      this.playlist.splice(idx, 1);
+
+      if (this.playlist.length === 0) {
+        this.plIdx = -1; this.playing = false;
+        this.texture = null; this.video = null; this._label = 'No media';
+        this.mat.map = null; this.mat.color.set(0x1a1a2e); this.mat.needsUpdate = true;
+        updateStatus();
+      } else if (wasActive) {
+        this.plIdx = -1;
+        this.activateClip(Math.min(idx, this.playlist.length - 1));
+      } else {
+        if (idx < this.plIdx) this.plIdx--;
+      }
+      updateSurfPanel();
+    }
+
+    toggleClipLoop(idx) {
+      const clip = this.playlist[idx];
+      if (!clip) return;
+      clip.loop = !clip.loop;
+      if (clip._vid) clip._vid.loop = clip.loop;
+      updateSurfPanel();
+    }
+
+    /* backward-compat alias */
+    loadMedia(file) { this.addClip(file); }
+
+    _applyTex(tex,label) {
       this.texture=tex; this._label=label;
       this.mat.map=tex; this.mat.color.set(0xffffff); this.mat.needsUpdate=true;
       dismissHint(); updateStatus();
     }
 
-    /* ── Visibility ─────────────────────────────── */
     setHandlesVisible(v) {
       this.handleEls.forEach(h=>h.classList.toggle('hidden',!v));
       this.edgeVisEls.forEach(l=>l.setAttribute('stroke-opacity',v?'1':'0'));
       this.edgeHitEls.forEach(l=>l.style.pointerEvents=v?'stroke':'none');
     }
 
-    /* ── Destroy ────────────────────────────────── */
+    /* Show/hide this surface entirely (used when switching slices) */
+    setVisible(v) {
+      this.mesh.visible    = v;
+      this.wireMesh.visible = v && showWire;
+      this.svgGroup.style.display = v ? '' : 'none';
+      if (v) {
+        this.setHandlesVisible(showHandles);
+      } else {
+        this.handleEls.forEach(h=>h.classList.add('hidden'));
+      }
+    }
+
     destroy() {
       scene.remove(this.mesh); scene.remove(this.wireMesh);
       this.geo.dispose(); this.mat.dispose(); this.wireMat.dispose();
-      if (this.texture) this.texture.dispose();
-      if (this.video)   { this.video.pause(); this.video.src=''; }
+      this.playlist.forEach(clip => {
+        if (clip._vid) { clip._vid.pause(); clip._vid.src = ''; }
+        if (clip._tex) clip._tex.dispose();
+        try { URL.revokeObjectURL(clip.url); } catch(e) {}
+      });
+      // Legacy standalone texture/video (no playlist)
+      if (!this.playlist.length) {
+        if (this.texture) this.texture.dispose();
+        if (this.video)   { this.video.pause(); this.video.src = ''; }
+      }
       this.handleEls.forEach(h=>h.remove());
       this.svgGroup.remove();
     }
@@ -544,44 +1006,37 @@
      NODE PRESETS
   ══════════════════════════════════════════════════ */
   function defaultQuadNodes(idx=0) {
-    const W=innerWidth, H=innerHeight, off=(idx%6)*28;
-    const px=W*.2+off, py=H*.2+off;
-    return [
-      {x:px,     y:py,     u:0, v:1},
-      {x:W-px,   y:py,     u:1, v:1},
-      {x:W-px,   y:H-py,   u:1, v:0},
-      {x:px,     y:H-py,   u:0, v:0},
-    ];
+    const W=innerWidth,H=innerHeight,off=(idx%6)*28,px=W*.2+off,py=H*.2+off;
+    return [{x:px,y:py,u:0,v:1},{x:W-px,y:py,u:1,v:1},{x:W-px,y:H-py,u:1,v:0},{x:px,y:H-py,u:0,v:0}];
   }
 
-  function defaultCircleNodes(idx=0, N=16) {
-    const W=innerWidth, H=innerHeight;
-    const cx=W/2+(idx%4)*40-60, cy=H/2+(idx%3)*40-40;
-    const rx=Math.min(W,H)*.22, ry=rx;
-    return Array.from({length:N}, (_,i) => {
-      const a = (i/N)*Math.PI*2 - Math.PI/2; // start at top
-      return {
-        x: cx + rx*Math.cos(a),
-        y: cy + ry*Math.sin(a),
-        u: .5 + .5*Math.cos(a),
-        v: .5 - .5*Math.sin(a),
-      };
+  function defaultCircleNodes(idx=0,N=16) {
+    const W=innerWidth,H=innerHeight;
+    const cx=W/2+(idx%4)*40-60, cy=H/2+(idx%3)*40-40, rx=Math.min(W,H)*.22;
+    return Array.from({length:N},(_,i)=>{
+      const a=(i/N)*Math.PI*2-Math.PI/2;
+      return {x:cx+rx*Math.cos(a),y:cy+rx*Math.sin(a),u:.5+.5*Math.cos(a),v:.5-.5*Math.sin(a)};
     });
   }
 
   /* ══════════════════════════════════════════════════
-     SURFACE MANAGER
+     SLICE MANAGER
   ══════════════════════════════════════════════════ */
-  let surfaces    = [];
+  let _sliceSeq = 0;
+  const slices  = [{ id:_sliceSeq++, name:'Slice 1', surfaces:[] }];
+  let currentSliceIdx = 0;
+
+  /* ══════════════════════════════════════════════════
+     SURFACE MANAGER  (surfaces = alias to current slice)
+  ══════════════════════════════════════════════════ */
+  let surfaces    = slices[0].surfaces;
   let selectedS   = null;
   let showHandles = true;
   let showWire    = false;
-  const dirty     = new Set(); // surfaces needing geometry rebuild
+  const dirty     = new Set();
 
   function addSurface(type='quad') {
-    const nodes = type==='circle'
-      ? defaultCircleNodes(surfaces.length)
-      : defaultQuadNodes(surfaces.length);
+    const nodes = type==='circle' ? defaultCircleNodes(surfaces.length) : defaultQuadNodes(surfaces.length);
     const s = new Surface(nodes);
     s.wireMesh.visible = showWire;
     surfaces.push(s);
@@ -597,14 +1052,14 @@
     const next=surfaces[Math.min(idx,surfaces.length-1)];
     if (next) selectSurface(next);
     updateStrip(); updateStatus();
-    if (surfaces.length===0) document.getElementById('hint').style.opacity='1';
+    if (slices.every(sl=>sl.surfaces.length===0)) document.getElementById('hint').style.opacity='1';
   }
 
   function selectSurface(s) {
     if (selectedS) selectedS.selected=false;
     selectedS=s;
-    if (s) { s.selected=true; }
-    updateStrip(); updateStatus();
+    if (s) s.selected=true;
+    updateStrip(); updateStatus(); updateSurfPanel();
   }
 
   function updateStrip() {
@@ -622,15 +1077,558 @@
 
   function updateStatus() {
     const el=document.getElementById('status');
-    if (!selectedS) { el.textContent='No surface selected'; return; }
-    const idx=surfaces.indexOf(selectedS)+1;
-    el.textContent=`Surface ${idx} (${selectedS.nodes.length} nodes) · ${selectedS._label}`;
+    if (!selectedS) { el.innerHTML='No surface selected'; return; }
+    const xs=selectedS.nodes.map(n=>n.x), ys=selectedS.nodes.map(n=>n.y);
+    const bw=Math.round(Math.max(...xs)-Math.min(...xs));
+    const bh=Math.round(Math.max(...ys)-Math.min(...ys));
+    el.innerHTML=
+      `Surface ${surfaces.indexOf(selectedS)+1} &nbsp;&middot;&nbsp; <span style="color:rgba(255,255,255,.55)">${bw}&thinsp;&times;&thinsp;${bh} px</span>`+
+      `<br>${selectedS.nodes.length} nodes &nbsp;&middot;&nbsp; ${selectedS._label}`;
+  }
+
+  /* ══════════════════════════════════════════════════
+     SCENE SYSTEM
+  ══════════════════════════════════════════════════ */
+  let _sceneSeq      = 0;
+  const scenes       = [];   // [{id, name, surfaces:[{sliceIdx,surfIdx,plIdx,opacity,nodes}]}]
+  let currentSceneIdx = -1;
+  let _sceneTransition = null; // {targets, elapsed, duration, phase}
+
+  function _captureScene(name) {
+    const surfStates = [];
+    slices.forEach((sl, si) => {
+      sl.surfaces.forEach((s, fi) => {
+        surfStates.push({
+          sliceIdx: si, surfIdx: fi,
+          plIdx:   s.plIdx,
+          opacity: s.mat.opacity,
+          nodes:   s.nodes.map(n => ({ nx: n.x/innerWidth, ny: n.y/innerHeight, u:n.u, v:n.v })),
+        });
+      });
+    });
+    return { id: _sceneSeq++, name, surfaces: surfStates };
+  }
+
+  function addScene() {
+    const sc = _captureScene('Escena ' + (scenes.length + 1));
+    scenes.push(sc);
+    updateScenePanel();
+  }
+
+  function removeScene(idx) {
+    if (idx < 0 || idx >= scenes.length) return;
+    scenes.splice(idx, 1);
+    if (currentSceneIdx >= scenes.length) currentSceneIdx = scenes.length - 1;
+    updateScenePanel();
+  }
+
+  function renameScene(idx) {
+    const name = prompt('Nombre de escena:', scenes[idx].name);
+    if (name && name.trim()) { scenes[idx].name = name.trim(); updateScenePanel(); }
+  }
+
+  function applyScene(idx) {
+    if (idx < 0 || idx >= scenes.length) return;
+    currentSceneIdx = idx;
+    const sc = scenes[idx];
+    const dur = parseFloat(document.getElementById('scene-tr').value) || 0;
+
+    const targets = [];
+    sc.surfaces.forEach(sd => {
+      const sl = slices[sd.sliceIdx];
+      if (!sl) return;
+      const s = sl.surfaces[sd.surfIdx];
+      if (!s) return;
+      targets.push({ s, sd, startOp: s.mat.opacity });
+    });
+
+    const _applyNodes = (s, sd) => {
+      sd.nodes.forEach((n, i) => {
+        if (!s.nodes[i]) return;
+        s.nodes[i].x = n.nx !== undefined ? n.nx * innerWidth  : (n.x || 0);
+        s.nodes[i].y = n.ny !== undefined ? n.ny * innerHeight : (n.y || 0);
+        s.nodes[i].u = n.u; s.nodes[i].v = n.v;
+      });
+      s._updateHandlePositions(); dirty.add(s.id);
+    };
+
+    if (dur <= 0) {
+      targets.forEach(({s, sd}) => {
+        if (sd.plIdx >= 0 && sd.plIdx < s.playlist.length) s.activateClip(sd.plIdx);
+        _applyNodes(s, sd);
+        s.mat.opacity = sd.opacity; s.mat.transparent = sd.opacity < 0.99; s.mat.needsUpdate = true;
+      });
+      _sceneTransition = null;
+      document.getElementById('tl-progress-bar').style.width = '0%';
+      updateScenePanel(); updateStatus(); return;
+    }
+
+    // Two-phase fade: fade-out → switch → fade-in
+    _sceneTransition = { targets, _applyNodes, elapsed: 0, duration: dur, phase: 1 };
+    updateScenePanel();
+  }
+
+  function _updateSceneTransition(dt) {
+    if (!_sceneTransition) return;
+    _sceneTransition.elapsed += dt / 1000;
+    const t       = _sceneTransition.elapsed;
+    const halfDur = _sceneTransition.duration / 2;
+    const bar     = document.getElementById('tl-progress-bar');
+
+    if (_sceneTransition.phase === 1) {
+      const p = Math.min(t / halfDur, 1);
+      _sceneTransition.targets.forEach(({s, startOp}) => {
+        s.mat.opacity = startOp * (1 - p);
+        s.mat.transparent = true; s.mat.needsUpdate = true;
+      });
+      bar.style.width = (p * 50) + '%';
+      if (t >= halfDur) {
+        // Switch clips + nodes
+        _sceneTransition.targets.forEach(({s, sd}) => {
+          if (sd.plIdx >= 0 && sd.plIdx < s.playlist.length) s.activateClip(sd.plIdx);
+          _sceneTransition._applyNodes(s, sd);
+        });
+        _sceneTransition.phase = 2;
+        _sceneTransition.elapsed = 0;
+      }
+    } else {
+      const p = Math.min(t / halfDur, 1);
+      _sceneTransition.targets.forEach(({s, sd}) => {
+        s.mat.opacity = sd.opacity * p;
+        s.mat.transparent = s.mat.opacity < 0.99; s.mat.needsUpdate = true;
+      });
+      bar.style.width = (50 + p * 50) + '%';
+      if (t >= halfDur) {
+        _sceneTransition.targets.forEach(({s, sd}) => {
+          s.mat.opacity = sd.opacity; s.mat.transparent = sd.opacity < 0.99; s.mat.needsUpdate = true;
+        });
+        _sceneTransition = null;
+        bar.style.width = '0%';
+        updateStatus();
+      }
+    }
+  }
+
+  function updateScenePanel() {
+    const track = document.getElementById('timeline-track');
+    track.innerHTML = '';
+    scenes.forEach((sc, i) => {
+      const block = document.createElement('div');
+      block.className = 'tl-scene' + (i === currentSceneIdx ? ' active' : '');
+      block.dataset.idx = i;
+      block.draggable = true;
+      const numEl  = document.createElement('div');
+      numEl.className = 'tl-num';
+      numEl.textContent = i + 1;
+      const nameEl = document.createElement('div');
+      nameEl.className = 'tl-name';
+      nameEl.textContent = sc.name;
+      block.appendChild(numEl);
+      block.appendChild(nameEl);
+      track.appendChild(block);
+    });
+  }
+
+  function updateSceneTrLabel() {
+    const v = parseFloat(document.getElementById('scene-tr').value);
+    document.getElementById('scene-tr-val').textContent = v.toFixed(1) + 's';
+  }
+
+  function updateSurfPanel() {
+    const panel = document.getElementById('surf-panel');
+    if (!selectedS) { panel.style.display = 'none'; return; }
+    panel.style.display = 'block';
+    document.getElementById('surf-panel-title').textContent =
+      'Playlist \u2014 Surf ' + (surfaces.indexOf(selectedS) + 1);
+
+    const list = document.getElementById('pl-list');
+    list.innerHTML = '';
+    selectedS.playlist.forEach((clip, i) => {
+      const item = document.createElement('div');
+      item.className = 'pl-item' + (i === selectedS.plIdx ? ' active' : '');
+      item.dataset.idx = i;
+      item.draggable = true;
+      const icon = clip.type === 'video' ? '\u25B6' : '\u25AA';
+      const nm = clip.name.replace(/</g,'&lt;');
+      item.innerHTML =
+        `<span class="pl-item-icon">${icon}</span>` +
+        `<span class="pl-item-name" title="${nm}">${nm}</span>` +
+        `<span class="pl-item-loop${clip.loop?' on':''}" data-action="loop" data-idx="${i}">\u21BA</span>` +
+        `<span class="pl-item-del" data-action="del" data-idx="${i}">\u2715</span>`;
+      list.appendChild(item);
+    });
+
+    const curClip = selectedS.playlist[selectedS.plIdx];
+    const isVideo = curClip && curClip.type === 'video';
+    const playBtn = document.getElementById('pl-btn-play');
+    playBtn.textContent = (selectedS.playing && isVideo) ? '\u23F8 Pause' : '\u25B6 Play';
+    playBtn.style.opacity = isVideo ? '1' : '0.5';
   }
 
   function dismissHint() {
     const h=document.getElementById('hint');
-    h.style.opacity='0';
-    setTimeout(()=>h.style.display='none',400);
+    h.style.opacity='0'; setTimeout(()=>h.style.display='none',400);
+  }
+
+  /* ── Slice operations ─────────────────────────── */
+  function addSlice() {
+    slices.push({ id:_sliceSeq++, name:`Slice ${slices.length+1}`, surfaces:[] });
+    switchToSlice(slices.length-1);
+  }
+
+  function removeSlice(idx) {
+    if (slices.length===1) return;
+    const sl=slices[idx];
+    if (sl.surfaces.length>0 && !confirm(`"${sl.name}" has ${sl.surfaces.length} surface(s). Delete all?`)) return;
+    sl.surfaces.forEach(s=>s.destroy());
+    slices.splice(idx,1);
+    const newIdx = Math.max(0, Math.min(currentSliceIdx > idx ? currentSliceIdx-1 : currentSliceIdx, slices.length-1));
+    currentSliceIdx = newIdx;
+    surfaces = slices[newIdx].surfaces;
+    surfaces.forEach(s=>s.setVisible(true));
+    selectedS = null;
+    if (surfaces.length>0) selectSurface(surfaces[0]); else { updateStrip(); updateStatus(); }
+    updateSliceTabs();
+  }
+
+  function switchToSlice(idx) {
+    if (idx===currentSliceIdx) return;
+    surfaces.forEach(s=>{
+      s.setVisible(false);
+      s.mesh.position.set(0,0,0); s.wireMesh.position.set(0,0,0);
+    });
+    if (selectedS) { selectedS.selected=false; selectedS=null; }
+    currentSliceIdx=idx;
+    surfaces=slices[idx].surfaces;
+    surfaces.forEach(s=>s.setVisible(true));
+    if (surfaces.length>0) selectSurface(surfaces[0]); else { updateStrip(); updateStatus(); }
+    updateSliceTabs();
+  }
+
+  function renameSlice(idx) {
+    const name=prompt('Slice name:',slices[idx].name);
+    if (name&&name.trim()) { slices[idx].name=name.trim(); updateSliceTabs(); }
+  }
+
+  function updateSliceTabs() {
+    const el=document.getElementById('slices');
+    el.innerHTML='';
+    slices.forEach((sl,i)=>{
+      const pill=document.createElement('div');
+      pill.className='slice-pill'+(i===currentSliceIdx?' active':'');
+      pill.innerHTML=`<span class="slice-name">${sl.name}</span>`+
+        (slices.length>1?`<span class="slice-del" data-idx="${i}">\u2715</span>`:'');
+      pill.addEventListener('click',e=>{
+        if (e.target.classList.contains('slice-del')) removeSlice(+e.target.dataset.idx);
+        else switchToSlice(i);
+      });
+      pill.addEventListener('dblclick',e=>{ if (!e.target.classList.contains('slice-del')) renameSlice(i); });
+      el.appendChild(pill);
+    });
+    const addBtn=document.createElement('button');
+    addBtn.className='btn slice-add-btn'; addBtn.textContent='+ Slice';
+    addBtn.addEventListener('click',addSlice);
+    el.appendChild(addBtn);
+  }
+
+  /* ══════════════════════════════════════════════════
+     PROJECT SAVE / LOAD
+  ══════════════════════════════════════════════════ */
+  function saveProject() {
+    const W=innerWidth, H=innerHeight;
+    const data={
+      version:1,
+      currentSlice:currentSliceIdx,
+      slices:slices.map(sl=>({
+        name:sl.name,
+        surfaces:sl.surfaces.map(s=>({
+          color:s.color,
+          label:s._label,
+          nodes:s.nodes.map(n=>({ nx:n.x/W, ny:n.y/H, u:n.u, v:n.v })),
+        }))
+      })),
+      scenes: scenes.map(sc=>({ name:sc.name, surfaces:sc.surfaces })),
+      sceneTransition: parseFloat(document.getElementById('scene-tr').value)||0.5,
+    };
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download='project.mapr'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  }
+
+  function loadProjectData(data) {
+    if (!data.version||!Array.isArray(data.slices)) { alert('Invalid project file.'); return; }
+    const W=innerWidth, H=innerHeight;
+
+    slices.forEach(sl=>sl.surfaces.forEach(s=>s.destroy()));
+    slices.length=0;
+    selectedS=null;
+
+    data.slices.forEach(slData=>{
+      const sl={ id:_sliceSeq++, name:slData.name||'Slice', surfaces:[] };
+      (slData.surfaces||[]).forEach(sd=>{
+        const nodes=(sd.nodes||[]).map(n=>({
+          x: n.nx!==undefined ? n.nx*W : (n.x||0),
+          y: n.ny!==undefined ? n.ny*H : (n.y||0),
+          u: n.u||0, v: n.v||0,
+        }));
+        if (nodes.length<3) return;
+        const s=new Surface(nodes, sd.color||null);
+        s._label=sd.label||'No media';
+        s.wireMesh.visible=showWire;
+        s.setVisible(false);
+        sl.surfaces.push(s);
+      });
+      slices.push(sl);
+    });
+
+    if (slices.length===0) slices.push({id:_sliceSeq++,name:'Slice 1',surfaces:[]});
+
+    const targetIdx=Math.min(data.currentSlice||0, slices.length-1);
+    currentSliceIdx=targetIdx;
+    surfaces=slices[targetIdx].surfaces;
+    surfaces.forEach(s=>s.setVisible(true));
+
+    if (surfaces.length>0) { selectSurface(surfaces[0]); dismissHint(); }
+    else { updateStrip(); updateStatus(); }
+    updateSliceTabs();
+
+    // Restore scenes
+    scenes.length = 0; _sceneSeq = 0; currentSceneIdx = -1; _sceneTransition = null;
+    if (Array.isArray(data.scenes)) {
+      data.scenes.forEach(sd => scenes.push({ id:_sceneSeq++, name:sd.name||'Escena', surfaces:sd.surfaces||[] }));
+    }
+    if (data.sceneTransition !== undefined) {
+      document.getElementById('scene-tr').value = data.sceneTransition;
+      updateSceneTrLabel();
+    }
+    updateScenePanel();
+  }
+
+  /* ══════════════════════════════════════════════════
+     CALIBRATION PATTERN
+  ══════════════════════════════════════════════════ */
+  let calibOpen = false;
+
+  function _drawCalib() {
+    const cv = document.getElementById('calib-canvas');
+    const W  = cv.width  = screen.width  || innerWidth;
+    const H  = cv.height = screen.height || innerHeight;
+    const ctx = cv.getContext('2d');
+
+    // Background
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    // ── Grid lines every 10% ─────────────────────
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.lineWidth   = 1.5;
+    for (let i = 1; i < 10; i++) {
+      ctx.beginPath();
+      ctx.moveTo(W * i / 10, 0); ctx.lineTo(W * i / 10, H);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(0, H * i / 10); ctx.lineTo(W, H * i / 10);
+      ctx.stroke();
+    }
+
+    // Outer border
+    ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(1, 1, W - 2, H - 2);
+
+    // ── Percentage labels ─────────────────────────
+    ctx.font = `${Math.round(Math.min(W,H)*0.013)}px 'SF Mono',Consolas,monospace`;
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (let i = 1; i < 10; i++) {
+      ctx.fillText(`${i*10}%`, W * i / 10, 6);
+    }
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let i = 1; i < 10; i++) {
+      ctx.fillText(`${i*10}%`, W - 8, H * i / 10);
+    }
+
+    // ── Reference crosshairs ─────────────────────
+    // Corners, center, and 4 inner corners at 10% offset
+    const refs = [
+      {x:0,   y:0  }, {x:W,   y:0  }, {x:W,   y:H  }, {x:0,   y:H  },
+      {x:W/2, y:H/2},
+      {x:W*.1,y:H*.1},{x:W*.9,y:H*.1},{x:W*.9,y:H*.9},{x:W*.1,y:H*.9},
+    ];
+
+    refs.forEach(({x, y}, i) => {
+      const isCorner  = i < 4;
+      const isCenter  = i === 4;
+      const r   = isCenter ? 14 : isCorner ? 10 : 7;
+      const arm = isCenter ? 28 : isCorner ? 22 : 16;
+      const col = isCenter ? '#00e5ff' : isCorner ? '#ffffff' : 'rgba(255,255,255,.55)';
+
+      ctx.strokeStyle = col;
+      ctx.lineWidth   = isCenter ? 2 : 1.5;
+
+      // Circle
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Cross arms (gap inside circle)
+      ctx.beginPath();
+      ctx.moveTo(x - arm, y); ctx.lineTo(x - r - 2, y);
+      ctx.moveTo(x + r + 2, y); ctx.lineTo(x + arm, y);
+      ctx.moveTo(x, y - arm); ctx.lineTo(x, y - r - 2);
+      ctx.moveTo(x, y + r + 2); ctx.lineTo(x, y + arm);
+      ctx.stroke();
+    });
+
+    // Center dot
+    ctx.fillStyle = '#00e5ff';
+    ctx.beginPath();
+    ctx.arc(W/2, H/2, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function openCalib() {
+    calibOpen = true;
+    const ov = document.getElementById('calib-overlay');
+    ov.style.display = 'block';
+    _drawCalib();
+    // Request fullscreen on the overlay itself
+    ov.requestFullscreen?.().catch(()=>{});
+  }
+
+  function closeCalib() {
+    calibOpen = false;
+    document.getElementById('calib-overlay').style.display = 'none';
+    if (document.fullscreenElement) document.exitFullscreen?.();
+  }
+
+  // Redraw on fullscreen resize
+  document.addEventListener('fullscreenchange', () => {
+    if (calibOpen) {
+      // Small delay to let the browser settle the new dimensions
+      setTimeout(_drawCalib, 80);
+    } else if (!document.fullscreenElement) {
+      // Fullscreen exited externally while calib was open
+      document.getElementById('calib-overlay').style.display = 'none';
+      calibOpen = false;
+    }
+  });
+
+  /* ══════════════════════════════════════════════════
+     GRID
+  ══════════════════════════════════════════════════ */
+  let showGrid = false;
+  function toggleGrid() {
+    showGrid = !showGrid;
+    document.getElementById('grid').style.display = showGrid ? 'block' : 'none';
+    document.getElementById('btn-grid').classList.toggle('on', showGrid);
+  }
+
+  /* ══════════════════════════════════════════════════
+     PROJECTOR CALCULATOR
+  ══════════════════════════════════════════════════ */
+  function calcProjector() {
+    const tr = parseFloat(document.getElementById('pc-tr').value) || 1.5;
+    const ar = parseFloat(document.getElementById('pc-ar').value) || (16/9);
+
+    // Forward: surface width → required throw distance
+    const wCm  = parseFloat(document.getElementById('pc-w').value) || 200;
+    const dist = tr * wCm;
+    const hCm  = wCm / ar;
+    document.getElementById('pc-out-fwd').innerHTML =
+      `Distancia: <strong>${dist.toFixed(0)} cm</strong> / <strong>${(dist/100).toFixed(2)} m</strong><br>`+
+      `Alto imagen: <strong>${hCm.toFixed(1)} cm</strong>`;
+
+    // Inverse: throw distance → achievable image size
+    const dCm  = parseFloat(document.getElementById('pc-d').value) || 300;
+    const imgW = dCm / tr;
+    const imgH = imgW / ar;
+    document.getElementById('pc-out-inv').innerHTML =
+      `Ancho: <strong>${imgW.toFixed(1)} cm</strong><br>`+
+      `Alto: <strong>${imgH.toFixed(1)} cm</strong>`;
+  }
+
+  /* ══════════════════════════════════════════════════
+     DRAW MODE — free-form mask
+  ══════════════════════════════════════════════════ */
+  let drawMode  = false;
+  const drawPts = [];   // [{x,y}] placed points
+  const drawElms= [];   // SVG preview elements
+
+  function toggleDrawMode() {
+    drawMode=!drawMode;
+    document.getElementById('btn-draw').classList.toggle('on',drawMode);
+    document.body.classList.toggle('drawing',drawMode);
+    _syncNodeTip();
+    if (!drawMode) _cancelDraw();
+  }
+
+  function _cancelDraw() {
+    drawPts.length=0;
+    drawElms.forEach(el=>el.remove()); drawElms.length=0;
+  }
+
+  function _refreshDrawPreview(mx,my) {
+    drawElms.forEach(el=>el.remove()); drawElms.length=0;
+    if (drawPts.length===0) return;
+
+    const linePts = mx!==undefined ? [...drawPts,{x:mx,y:my}] : drawPts;
+    if (linePts.length>1) {
+      const pl=document.createElementNS(SVG_NS,'polyline');
+      pl.setAttribute('points',linePts.map(p=>`${p.x},${p.y}`).join(' '));
+      pl.setAttribute('stroke','#00e5ff'); pl.setAttribute('stroke-width','1.5');
+      pl.setAttribute('stroke-dasharray','5 3'); pl.setAttribute('fill','none');
+      pl.setAttribute('opacity','0.55'); pl.style.pointerEvents='none';
+      svgRoot.appendChild(pl); drawElms.push(pl);
+    }
+
+    // Closing ghost line when ≥3 points placed and not dragging cursor
+    if (drawPts.length>=3 && mx===undefined) {
+      const last=drawPts[drawPts.length-1], first=drawPts[0];
+      const cl=document.createElementNS(SVG_NS,'line');
+      cl.setAttribute('x1',last.x); cl.setAttribute('y1',last.y);
+      cl.setAttribute('x2',first.x); cl.setAttribute('y2',first.y);
+      cl.setAttribute('stroke','#00e5ff'); cl.setAttribute('stroke-width','1');
+      cl.setAttribute('stroke-dasharray','3 5'); cl.setAttribute('opacity','0.3');
+      cl.style.pointerEvents='none';
+      svgRoot.appendChild(cl); drawElms.push(cl);
+    }
+
+    drawPts.forEach((p,i)=>{
+      const c=document.createElementNS(SVG_NS,'circle');
+      c.setAttribute('cx',p.x); c.setAttribute('cy',p.y);
+      c.setAttribute('r',i===0?5:4);
+      c.setAttribute('fill',i===0?'#a78bfa':'#00e5ff');
+      c.setAttribute('opacity','0.9'); c.style.pointerEvents='none';
+      svgRoot.appendChild(c); drawElms.push(c);
+    });
+  }
+
+  function _finishDraw() {
+    if (drawPts.length<3) { _cancelDraw(); return; }
+    const xs=drawPts.map(p=>p.x), ys=drawPts.map(p=>p.y);
+    const minX=Math.min(...xs), maxX=Math.max(...xs);
+    const minY=Math.min(...ys), maxY=Math.max(...ys);
+    const rx=maxX-minX||1, ry=maxY-minY||1;
+    const nodes=drawPts.map(p=>({ x:p.x, y:p.y, u:(p.x-minX)/rx, v:1-(p.y-minY)/ry }));
+    const s=new Surface(nodes);
+    s.wireMesh.visible=showWire;
+    surfaces.push(s); selectSurface(s); updateStrip(); dismissHint();
+    _cancelDraw();
+    drawMode=false;
+    document.getElementById('btn-draw').classList.remove('on');
+    document.body.classList.remove('drawing');
+    _syncNodeTip();
+  }
+
+  function _syncNodeTip() {
+    document.getElementById('node-tip').textContent = drawMode
+      ? 'Click to place points \u00b7 Double-click or Enter to finish \u00b7 Esc to cancel'
+      : 'Click edge \u2192 add node \u00a0\u00b7\u00a0 Right-click / Alt+click / Hold \u2192 delete node';
   }
 
   /* ══════════════════════════════════════════════════
@@ -638,227 +1636,1035 @@
   ══════════════════════════════════════════════════ */
   let dragSid=-1, dragNi=-1;
 
-  function tryDeleteNode(h, e) {
-    // Alt+Click or right-click (button===2) → delete node
-    if (!e.altKey && e.button !== 2) return false;
+  /* Surface-body drag */
+  const _ray = new THREE.Raycaster();
+  let surfDragS=null, surfDragX=0, surfDragY=0;
+
+  function surfaceAtPoint(cx,cy) {
+    _ray.setFromCamera({x:(cx/innerWidth)*2-1, y:-(cy/innerHeight)*2+1}, camera);
+    const hits=_ray.intersectObjects(surfaces.map(s=>s.mesh));
+    return hits.length ? (surfaces.find(s=>s.mesh===hits[0].object)||null) : null;
+  }
+
+  function tryDeleteNode(h,e) {
+    if (!e.altKey && e.button!==2) return false;
     e.preventDefault();
     const s=surfaces.find(x=>x.id===+h.dataset.sid);
     if (s) { selectSurface(s); s.removeNode(+h.dataset.ni); updateStatus(); }
     return true;
   }
 
-  document.body.addEventListener('mousedown', e => {
+  document.body.addEventListener('mousedown',e=>{
+    if (drawMode) return;
     const h=e.target.closest('.handle');
-    if (!h) return;
-    if (tryDeleteNode(h, e)) return;
-    dragSid=+h.dataset.sid; dragNi=+h.dataset.ni;
-    h.classList.add('active');
-    const s=surfaces.find(x=>x.id===dragSid);
-    if (s) selectSurface(s);
-    e.preventDefault();
+    if (h) {
+      if (tryDeleteNode(h,e)) return;
+      dragSid=+h.dataset.sid; dragNi=+h.dataset.ni;
+      h.classList.add('active');
+      const s=surfaces.find(x=>x.id===dragSid);
+      if (s) selectSurface(s);
+      e.preventDefault();
+    } else if (e.button===0) {
+      const s=surfaceAtPoint(e.clientX,e.clientY);
+      if (s) {
+        selectSurface(s);
+        surfDragS=s; surfDragX=e.clientX; surfDragY=e.clientY;
+        document.body.style.cursor='grabbing';
+        e.preventDefault();
+      }
+    }
   });
 
-  /* ── Long-press state ─────────────────────────────── */
-  let lpTimer    = null;   // setTimeout handle
-  let lpHandle   = null;   // the handle element being held
-  let lpStartX   = 0;
-  let lpStartY   = 0;
-  const LP_MS    = 600;    // hold duration in ms
-  const LP_MOVE  = 10;     // px of movement that cancels long-press
+  let lpTimer=null, lpHandle=null, lpStartX=0, lpStartY=0;
+  const LP_MS=600, LP_MOVE=10;
 
   function cancelLongPress() {
     if (lpTimer) { clearTimeout(lpTimer); lpTimer=null; }
-    if (lpHandle) {
-      lpHandle.classList.remove('pressing','will-delete');
-      lpHandle=null;
-    }
+    if (lpHandle) { lpHandle.classList.remove('pressing','will-delete'); lpHandle=null; }
   }
 
-  function startLongPress(h, x, y) {
+  function startLongPress(h,x,y) {
     cancelLongPress();
     lpHandle=h; lpStartX=x; lpStartY=y;
     h.classList.add('pressing');
-
-    lpTimer = setTimeout(() => {
+    lpTimer=setTimeout(()=>{
       if (!lpHandle) return;
-      // Visual "ready to delete" state
-      lpHandle.classList.remove('pressing');
-      lpHandle.classList.add('will-delete');
-      // Delete on touchend (handled in onTouchEnd)
-    }, LP_MS);
+      lpHandle.classList.remove('pressing'); lpHandle.classList.add('will-delete');
+    },LP_MS);
   }
 
-  document.body.addEventListener('touchstart', e => {
+  document.body.addEventListener('touchstart',e=>{
+    if (drawMode) return;
     const h=e.target.closest('.handle');
-    if (!h) return;
-    e.preventDefault();
+    const t=e.touches[0];
+    if (h) {
+      e.preventDefault();
+      const sid=+h.dataset.sid, ni=+h.dataset.ni;
+      const s=surfaces.find(x=>x.id===sid);
+      if (s) selectSurface(s);
+      startLongPress(h,t.clientX,t.clientY);
+      dragSid=sid; dragNi=ni; h.classList.add('active');
+    } else {
+      const s=surfaceAtPoint(t.clientX,t.clientY);
+      if (s) {
+        e.preventDefault();
+        selectSurface(s);
+        surfDragS=s; surfDragX=t.clientX; surfDragY=t.clientY;
+      }
+    }
+  },{passive:false});
 
-    const t = e.touches[0];
-    const sid=+h.dataset.sid, ni=+h.dataset.ni;
-    const s=surfaces.find(x=>x.id===sid);
-    if (s) selectSurface(s);
-
-    startLongPress(h, t.clientX, t.clientY);
-
-    dragSid=sid; dragNi=ni;
-    h.classList.add('active');
-  }, {passive:false});
-
-  const coords = e => e.touches ? [e.touches[0].clientX, e.touches[0].clientY] : [e.clientX, e.clientY];
+  const coords=e=>e.touches?[e.touches[0].clientX,e.touches[0].clientY]:[e.clientX,e.clientY];
 
   function onMove(e) {
-    // Cancel long press if finger moved too much
-    if (lpHandle && e.touches) {
+    if (drawMode) { const [_px,_py]=coords(e); _refreshDrawPreview(_px,_py); }
+
+    if (lpHandle&&e.touches) {
       const dx=e.touches[0].clientX-lpStartX, dy=e.touches[0].clientY-lpStartY;
-      if (Math.hypot(dx,dy) > LP_MOVE) cancelLongPress();
+      if (Math.hypot(dx,dy)>LP_MOVE) cancelLongPress();
     }
 
-    if (dragSid<0) return;
-    // Don't drag if we're in "will-delete" state
-    if (lpHandle && lpHandle.classList.contains('will-delete')) return;
+    // Surface body drag
+    if (surfDragS) {
+      const [cx,cy]=coords(e);
+      const dx=cx-surfDragX, dy=cy-surfDragY;
+      surfDragS.nodes.forEach(n=>{n.x+=dx; n.y+=dy;});
+      surfDragS._updateHandlePositions();
+      dirty.add(surfDragS.id);
+      surfDragX=cx; surfDragY=cy;
+      return;
+    }
+
+    // Node drag
+    if (dragSid<0) {
+      // Hover cursor feedback (idle, mouse only)
+      if (!e.touches&&!drawMode) {
+        const s=surfaceAtPoint(e.clientX,e.clientY);
+        document.body.style.cursor=s?'grab':'';
+      }
+      return;
+    }
+    if (lpHandle&&lpHandle.classList.contains('will-delete')) return;
     const s=surfaces.find(x=>x.id===dragSid);
     if (!s) return;
     const [x,y]=coords(e);
     s.nodes[dragNi].x=x; s.nodes[dragNi].y=y;
-    s._updateHandlePositions();
-    dirty.add(dragSid);
+    s._updateHandlePositions(); dirty.add(dragSid);
   }
 
   function onTouchEnd(e) {
-    if (lpHandle && lpHandle.classList.contains('will-delete')) {
-      // Long press completed — delete the node
+    if (lpHandle&&lpHandle.classList.contains('will-delete')) {
       const sid=+lpHandle.dataset.sid, ni=+lpHandle.dataset.ni;
       const s=surfaces.find(x=>x.id===sid);
       if (s) { s.removeNode(ni); updateStatus(); }
-      cancelLongPress();
-      dragSid=dragNi=-1;
-      return;
+      cancelLongPress(); dragSid=dragNi=-1; return;
     }
-    cancelLongPress();
-    onUp();
+    cancelLongPress(); onUp();
   }
 
   function onUp() {
+    if (surfDragS) {
+      surfDragS=null;
+      document.body.style.cursor='';
+    }
     if (dragSid>=0) {
       document.querySelectorAll('.handle.active').forEach(h=>h.classList.remove('active'));
       dragSid=dragNi=-1;
     }
   }
 
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('touchmove', onMove, {passive:false});
-  window.addEventListener('mouseup',   onUp);
-  window.addEventListener('touchend',  onTouchEnd);
+  window.addEventListener('mousemove',onMove);
+  window.addEventListener('touchmove',onMove,{passive:false});
+  window.addEventListener('mouseup',onUp);
+  window.addEventListener('touchend',onTouchEnd);
 
   /* ══════════════════════════════════════════════════
      EDGE CLICK — add node
   ══════════════════════════════════════════════════ */
-  svgRoot.addEventListener('click', e => {
+  svgRoot.addEventListener('click',e=>{
+    if (drawMode) return;
     const hit=e.target.closest('.edge-hit');
     if (!hit) return;
     const sid=+hit.dataset.sid, edgeIdx=+hit.dataset.edge;
     const s=surfaces.find(x=>x.id===sid);
     if (!s) return;
-    selectSurface(s);
-    s.addNodeOnEdge(edgeIdx, e.clientX, e.clientY);
-    updateStatus();
+    selectSurface(s); s.addNodeOnEdge(edgeIdx,e.clientX,e.clientY); updateStatus();
   });
 
+  svgRoot.addEventListener('touchend',e=>{
+    if (drawMode) return;
+    const hit=e.target.closest('.edge-hit');
+    if (!hit) return;
+    e.preventDefault();
+    const t=e.changedTouches[0];
+    const sid=+hit.dataset.sid, edgeIdx=+hit.dataset.edge;
+    const s=surfaces.find(x=>x.id===sid);
+    if (!s) return;
+    selectSurface(s); s.addNodeOnEdge(edgeIdx,t.clientX,t.clientY); updateStatus();
+  },{passive:false});
+
   /* ══════════════════════════════════════════════════
-     RIGHT-CLICK / contextmenu — suppress browser menu on handles
+     DRAW MODE CLICKS
   ══════════════════════════════════════════════════ */
-  document.body.addEventListener('contextmenu', e => {
+  const _uiSelectors='#ui,#surfaces,#slices,#timeline,#logo,#status,#keys,#node-tip,#surf-panel,#proj-panel,#fx-panel';
+
+  document.body.addEventListener('click',e=>{
+    if (!drawMode) return;
+    if (e.target.closest(_uiSelectors)) return;
+    drawPts.push({x:e.clientX,y:e.clientY});
+    _refreshDrawPreview();
+  });
+
+  document.body.addEventListener('dblclick',e=>{
+    if (!drawMode) return;
+    if (e.target.closest(_uiSelectors)) return;
+    e.preventDefault();
+    if (drawPts.length>0) drawPts.pop(); // remove duplicate from second click
+    _finishDraw();
+  });
+
+  /* Draw mode — touch: tap to add point, double-tap to finish */
+  let _drawTapCount=0, _drawTapTimer=null;
+  document.body.addEventListener('touchend',e=>{
+    if (!drawMode) return;
+    if (e.target.closest(_uiSelectors)) return;
+    e.preventDefault();
+    const t=e.changedTouches[0];
+    _drawTapCount++;
+    clearTimeout(_drawTapTimer);
+    if (_drawTapCount>=2) {
+      // Double-tap: pop the point added by first tap, then close polygon
+      _drawTapCount=0;
+      if (drawPts.length>0) drawPts.pop();
+      _finishDraw();
+    } else {
+      drawPts.push({x:t.clientX, y:t.clientY});
+      _refreshDrawPreview();
+      _drawTapTimer=setTimeout(()=>{ _drawTapCount=0; },350);
+    }
+  },{passive:false});
+
+  /* ══════════════════════════════════════════════════
+     RIGHT-CLICK
+  ══════════════════════════════════════════════════ */
+  document.body.addEventListener('contextmenu',e=>{
     if (e.target.closest('.handle')) e.preventDefault();
   });
 
   /* ══════════════════════════════════════════════════
      MEDIA
   ══════════════════════════════════════════════════ */
-  document.getElementById('file-input').addEventListener('change', e=>{
+  document.getElementById('file-input').addEventListener('change',e=>{
     if (!selectedS) { alert('Select a surface first.'); return; }
-    selectedS.loadMedia(e.target.files[0]);
+    Array.from(e.target.files).forEach(f => selectedS.addClip(f));
     e.target.value='';
   });
 
-  document.body.addEventListener('dragenter', e=>{e.preventDefault();document.body.classList.add('dropping');});
-  document.body.addEventListener('dragover',  e=>e.preventDefault());
-  document.body.addEventListener('dragleave', e=>{if(!e.relatedTarget)document.body.classList.remove('dropping');});
-  document.body.addEventListener('drop', e=>{
+  document.body.addEventListener('dragenter',e=>{e.preventDefault();document.body.classList.add('dropping');});
+  document.body.addEventListener('dragover',e=>e.preventDefault());
+  document.body.addEventListener('dragleave',e=>{if(!e.relatedTarget)document.body.classList.remove('dropping');});
+  document.body.addEventListener('drop',e=>{
     e.preventDefault(); document.body.classList.remove('dropping');
     if (!selectedS){alert('Select a surface first.');return;}
-    const f=e.dataTransfer.files[0];
-    if (f&&(f.type.startsWith('image/')||f.type.startsWith('video/'))) selectedS.loadMedia(f);
+    Array.from(e.dataTransfer.files)
+      .filter(f=>f.type.startsWith('image/')||f.type.startsWith('video/'))
+      .forEach(f=>selectedS.addClip(f));
+  });
+
+  /* ══════════════════════════════════════════════════
+     PROJECT SAVE/LOAD UI
+  ══════════════════════════════════════════════════ */
+  document.getElementById('btn-save').addEventListener('click',saveProject);
+
+  document.getElementById('proj-input').addEventListener('change',e=>{
+    const f=e.target.files[0]; if (!f) return;
+    const reader=new FileReader();
+    reader.onload=ev=>{ try { loadProjectData(JSON.parse(ev.target.result)); } catch(err) { alert('Error: '+err.message); } };
+    reader.readAsText(f); e.target.value='';
   });
 
   /* ══════════════════════════════════════════════════
      UI CONTROLS
   ══════════════════════════════════════════════════ */
-  document.getElementById('btn-quad').addEventListener('click',   ()=>addSurface('quad'));
-  document.getElementById('btn-circle').addEventListener('click', ()=>addSurface('circle'));
-  document.getElementById('btn-del').addEventListener('click',    removeSelected);
+  document.getElementById('btn-quad').addEventListener('click',  ()=>addSurface('quad'));
+  document.getElementById('btn-circle').addEventListener('click',()=>addSurface('circle'));
+  document.getElementById('btn-draw').addEventListener('click',  toggleDrawMode);
+  document.getElementById('btn-del').addEventListener('click',   removeSelected);
 
-  document.getElementById('btn-handles').addEventListener('click', ()=>{
+  document.getElementById('btn-handles').addEventListener('click',()=>{
     showHandles=!showHandles;
     surfaces.forEach(s=>s.setHandlesVisible(showHandles));
     document.getElementById('btn-handles').classList.toggle('on',showHandles);
-    document.getElementById('btn-handles').textContent=showHandles?'Handles':'Handles ✕';
+    document.getElementById('btn-handles').textContent=showHandles?'Handles':'Handles \u2715';
   });
 
-  document.getElementById('btn-wire').addEventListener('click', ()=>{
+  document.getElementById('btn-wire').addEventListener('click',()=>{
     showWire=!showWire;
-    surfaces.forEach(s=>s.wireMesh.visible=showWire);
+    surfaces.forEach(s=>{ s.wireMesh.visible=showWire; });
     document.getElementById('btn-wire').classList.toggle('on',showWire);
   });
 
-  document.getElementById('btn-fs').addEventListener('click', ()=>{
+  document.getElementById('btn-grid').addEventListener('click', toggleGrid);
+
+  document.getElementById('btn-fs').addEventListener('click',()=>{
     if(!document.fullscreenElement) document.documentElement.requestFullscreen?.();
     else document.exitFullscreen?.();
   });
 
-  window.addEventListener('keydown', e=>{
+  document.getElementById('btn-calib').addEventListener('click', openCalib);
+
+  // Projector panel
+  document.getElementById('proj-header').addEventListener('click',()=>{
+    document.getElementById('proj-panel').classList.toggle('collapsed');
+    calcProjector();
+  });
+  ['pc-tr','pc-ar','pc-w','pc-d'].forEach(id=>{
+    document.getElementById(id).addEventListener('input', calcProjector);
+  });
+
+  /* ══════════════════════════════════════════════════
+     KEYBOARD
+  ══════════════════════════════════════════════════ */
+  window.addEventListener('keydown',e=>{
     if (e.target.tagName==='INPUT') return;
     const k=e.key.toLowerCase();
+
+    if ((e.ctrlKey||e.metaKey)&&k==='s') { e.preventDefault(); saveProject(); return; }
+    if (e.key==='Escape') {
+      if (calibOpen)  { closeCalib();    return; }
+      if (drawMode)   { toggleDrawMode(); return; }
+    }
+    if (e.key==='Enter'&&drawMode) { e.preventDefault(); _finishDraw(); return; }
+    if (e.key===' ') {
+      e.preventDefault();
+      if (scenes.length>0) applyScene((currentSceneIdx+1) % scenes.length);
+      return;
+    }
+
     if(k==='h') document.getElementById('btn-handles').click();
     if(k==='w') document.getElementById('btn-wire').click();
+    if(k==='g') toggleGrid();
     if(k==='f') document.getElementById('btn-fs').click();
     if(k==='n') addSurface('quad');
     if(k==='c') addSurface('circle');
+    if(k==='d') toggleDrawMode();
     if(k==='r'&&selectedS) { selectedS.reset(); updateStatus(); }
     if((k==='delete'||k==='backspace')&&!e.target.matches('input,textarea')) removeSelected();
     if(k==='tab'){
       e.preventDefault();
       if(surfaces.length<2) return;
-      const idx=surfaces.indexOf(selectedS);
-      selectSurface(surfaces[(idx+1)%surfaces.length]);
+      selectSurface(surfaces[(surfaces.indexOf(selectedS)+1)%surfaces.length]);
     }
   });
 
   /* ══════════════════════════════════════════════════
      RESIZE
   ══════════════════════════════════════════════════ */
-  window.addEventListener('resize', ()=>{
-    renderer.setSize(innerWidth, innerHeight);
+  window.addEventListener('resize',()=>{
+    renderer.setSize(innerWidth,innerHeight);
     surfaces.forEach(s=>{ s.rebuildGeometry(); s._updateHandlePositions(); });
+    if (calibOpen) _drawCalib();
+    // fx-canvas is resized lazily inside _drawFxFrame each frame
+  });
+
+  /* ══════════════════════════════════════════════════
+     MEDIAPIPE — HANDS + BODY
+  ══════════════════════════════════════════════════ */
+
+  /* Shared landmark data — written by the worker message handler, read by rAF */
+  const mpData = { rightHand:null, leftHand:null, pose:null };
+
+  let mpActive        = false;
+  let _mpWorker       = null;   // Worker running Holistic inference
+  let _camStream      = null;   // MediaStream from getUserMedia
+  let _frameCaptureId = null;   // setTimeout id for the frame-capture loop
+
+  /* Displacement state (Effect 2) */
+  let _prevPoseKeys = null;
+  let _dispX = 0, _dispY = 0;
+  const DISP_DECAY  = 0.82;
+  const DISP_SENS   = 0.20;
+  const DISP_MAX_PX = 22;
+
+  /* ── Web Worker source (Blob — no separate file required) ─────────────
+     Architecture:
+       Main thread  captures a 320×240 ImageBitmap from the <video> every
+       ~34 ms via createImageBitmap() — GPU-accelerated, non-blocking —
+       then transfers it (zero-copy Transferable) to the worker.
+       Worker       polyfills the DOM subset MediaPipe needs, loads
+       @mediapipe/holistic via importScripts, runs inference, and posts
+       back only the normalised {x,y,z,visibility} arrays.
+       Main thread  receives the landmark arrays and updates mpData;
+       the rAF render loop reads mpData without ever waiting on ML.     */
+  const _MP_WORKER_SRC = `
+'use strict';
+
+/* ── Minimal DOM/window polyfill required by @mediapipe/holistic ── */
+(function() {
+  function fakeEl(tag) {
+    let _w = 1, _h = 1, _osc = null;
+    const el = {
+      tagName: (tag || '').toUpperCase(), nodeType: 1,
+      style: {}, className: '', id: '',
+      parentNode: null, children: [], childNodes: [],
+      ownerDocument: null,
+      getAttribute()    { return null; },
+      setAttribute()    {},
+      hasAttribute()    { return false; },
+      addEventListener(){},
+      removeEventListener(){},
+      dispatchEvent()   {},
+      appendChild(c)    { el.childNodes.push(c); return c; },
+      removeChild()     {},
+      insertBefore(c)   { return c; },
+      contains()        { return false; },
+      cloneNode()       { return fakeEl(tag); },
+      getBoundingClientRect() { return {top:0,left:0,width:_w,height:_h,bottom:_h,right:_w}; },
+      get width()  { return _w; },
+      set width(v) { _w = v; if (_osc) _osc.width  = v; },
+      get height() { return _h; },
+      set height(v){ _h = v; if (_osc) _osc.height = v; },
+      getContext(type) {
+        if (!_osc) {
+          try { _osc = new OffscreenCanvas(_w, _h); }
+          catch(e) { return null; }
+        }
+        try { return _osc.getContext(type); } catch(e) { return null; }
+      },
+      toDataURL() { return ''; },
+    };
+    el.ownerDocument = el;
+    return el;
+  }
+
+  if (typeof document === 'undefined') {
+    const body = fakeEl('body');
+    const head = fakeEl('head');
+    self.document = {
+      createElement:    fakeEl,
+      createElementNS:  (_ns, tag) => fakeEl(tag),
+      createTextNode:   () => ({ nodeType:3, textContent:'' }),
+      querySelector:    () => null,
+      querySelectorAll: () => { const a=[]; a.forEach=Array.prototype.forEach.bind(a); return a; },
+      getElementById:   () => null,
+      getElementsByTagName: () => [],
+      body, head,
+      documentElement: fakeEl('html'),
+      readyState: 'complete',
+      addEventListener(){},
+      removeEventListener(){},
+    };
+  }
+
+  if (typeof window === 'undefined') { self.window = self; }
+  self.window.document  = self.document;
+  self.window.location  = self.location  || { href:'about:blank', hostname:'', pathname:'/', search:'', hash:'' };
+  self.window.navigator = self.navigator || { userAgent:'', platform:'' };
+  if (!self.requestAnimationFrame) {
+    self.requestAnimationFrame = cb => setTimeout(cb, 16);
+    self.cancelAnimationFrame  = clearTimeout;
+  }
+  /* Class stubs for instanceof checks inside MediaPipe */
+  if (!self.HTMLCanvasElement) self.HTMLCanvasElement = function(){};
+  if (!self.HTMLVideoElement)  self.HTMLVideoElement  = function(){};
+  if (!self.HTMLImageElement)  self.HTMLImageElement  = function(){};
+  if (!self.ImageBitmap)       self.ImageBitmap       = function(){};
+})();
+
+const _CDN  = 'https://cdn.jsdelivr.net/npm/@mediapipe/holistic';
+let _holistic = null;
+let _busy     = false;   // prevent sending a new frame before results arrive
+
+self.addEventListener('message', async function(e) {
+  const msg = e.data;
+
+  /* ── Init: load MediaPipe and initialise the graph ── */
+  if (msg.type === 'init') {
+    try {
+      importScripts(_CDN + '/holistic.js');
+      _holistic = new Holistic({ locateFile: function(f) { return _CDN + '/' + f; } });
+      _holistic.setOptions({
+        modelComplexity:        1,
+        smoothLandmarks:        true,
+        enableSegmentation:     false,
+        refineFaceLandmarks:    false,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence:  0.5,
+      });
+      _holistic.onResults(function(r) {
+        function norm(arr) {
+          if (!arr) return null;
+          return arr.map(function(p) {
+            return { x: p.x, y: p.y, z: p.z || 0, visibility: p.visibility || 1 };
+          });
+        }
+        self.postMessage({
+          type:      'results',
+          rightHand: norm(r.rightHandLandmarks),
+          leftHand:  norm(r.leftHandLandmarks),
+          pose:      norm(r.poseLandmarks),
+        });
+        _busy = false;
+      });
+      self.postMessage({ type: 'ready' });
+    } catch(err) {
+      self.postMessage({ type: 'error', message: err && err.message ? err.message : String(err) });
+    }
+    return;
+  }
+
+  /* ── Frame: run inference on a transferred ImageBitmap ── */
+  if (msg.type === 'frame') {
+    if (!_holistic || _busy) {
+      try { msg.bitmap.close(); } catch(_) {}
+      return;
+    }
+    _busy = true;
+    try   { await _holistic.send({ image: msg.bitmap }); }
+    catch (_) { _busy = false; }
+    finally { try { msg.bitmap.close(); } catch(_) {} }
+  }
+});
+`;
+
+  async function toggleCamera() {
+    if (mpActive) { _stopCamera(); return; }
+    const btn = document.getElementById('btn-cam');
+    btn.textContent = '\u23F3 Cargando\u2026'; btn.disabled = true;
+    try {
+      await _startCamera();
+    } catch(err) {
+      alert('Error al iniciar c\u00e1mara:\n' + err.message);
+    } finally {
+      btn.textContent = '\uD83D\uDCF7 C\u00e1mara'; btn.disabled = false;
+    }
+  }
+
+  async function _startCamera() {
+    const vid = document.getElementById('cam-video');
+
+    /* 1 – Acquire camera stream (no MediaPipe Camera utility needed) */
+    _camStream = await navigator.mediaDevices.getUserMedia({
+      video: { width:320, height:240, facingMode:'user' }, audio: false,
+    });
+    vid.srcObject = _camStream;
+    await new Promise(res => { vid.onloadeddata = res; });
+    await vid.play().catch(() => {});
+
+    /* 2 – Spawn the worker from an inline Blob (avoids CORS / extra file) */
+    const blob  = new Blob([_MP_WORKER_SRC], { type:'application/javascript' });
+    const blobUrl = URL.createObjectURL(blob);
+    _mpWorker = new Worker(blobUrl);
+    URL.revokeObjectURL(blobUrl);   // can revoke immediately after Worker() call
+
+    /* 3 – Wait for the worker to load and initialise MediaPipe Holistic */
+    await new Promise((res, rej) => {
+      const onMsg = e => {
+        if (e.data.type === 'ready') {
+          _mpWorker.removeEventListener('message', onMsg); res();
+        } else if (e.data.type === 'error') {
+          _mpWorker.removeEventListener('message', onMsg);
+          rej(new Error('Worker: ' + e.data.message));
+        }
+      };
+      _mpWorker.addEventListener('message', onMsg);
+      _mpWorker.addEventListener('error', ev => rej(ev.error || new Error(ev.message)), { once:true });
+      _mpWorker.postMessage({ type:'init' });
+    });
+
+    /* 4 – Route ongoing results to the main-thread handler */
+    _mpWorker.onmessage = e => { if (e.data.type === 'results') _onMpResults(e.data); };
+
+    /* 5 – Start the frame-capture loop */
+    _startFrameLoop(vid);
+
+    mpActive = true;
+    document.getElementById('cam-preview').style.display = 'block';
+    document.getElementById('mp-status').style.display   = 'block';
+    document.getElementById('fx-panel').style.display    = 'block';
+    document.getElementById('btn-cam').classList.add('on');
+  }
+
+  /* Captures one video frame as ImageBitmap and transfers it to the worker.
+     createImageBitmap() is GPU-accelerated and returns immediately — the
+     actual pixel copy happens off the main thread.  The Transferable flag
+     means the ArrayBuffer is moved (not copied) to the worker.            */
+  function _startFrameLoop(vid) {
+    function tick() {
+      if (!mpActive) return;
+      if (vid.readyState >= 2) {
+        createImageBitmap(vid, { resizeWidth:320, resizeHeight:240, resizeQuality:'pixelated' })
+          .then(bmp => _mpWorker.postMessage({ type:'frame', bitmap:bmp }, [bmp]))
+          .catch(() => {});
+      }
+      _frameCaptureId = setTimeout(tick, 34);   // ~29 fps cap — inference is the bottleneck
+    }
+    tick();
+  }
+
+  function _stopCamera() {
+    if (_frameCaptureId !== null) { clearTimeout(_frameCaptureId); _frameCaptureId = null; }
+    if (_mpWorker)  { _mpWorker.terminate(); _mpWorker = null; }
+    if (_camStream) { _camStream.getTracks().forEach(t => t.stop()); _camStream = null; }
+    const vid = document.getElementById('cam-video');
+    vid.srcObject = null;
+
+    mpActive = false;
+    mpData.rightHand = mpData.leftHand = mpData.pose = null;
+    _dispX = _dispY = 0; _prevPoseKeys = null;
+
+    document.getElementById('cam-preview').style.display = 'none';
+    document.getElementById('mp-status').style.display   = 'none';
+    document.getElementById('fx-panel').style.display    = 'none';
+    document.getElementById('cam-tag-hand').classList.remove('on');
+    document.getElementById('cam-tag-pose').classList.remove('on');
+    document.getElementById('btn-cam').classList.remove('on');
+
+    const fxcv = document.getElementById('fx-canvas');
+    fxcv.getContext('2d').clearRect(0, 0, fxcv.width, fxcv.height);
+    _waves.length = 0; _parts.length = 0;
+
+    slices.forEach(sl => sl.surfaces.forEach(s => {
+      s.mesh.position.set(0,0,0); s.wireMesh.position.set(0,0,0);
+    }));
+  }
+
+  /* Results arrive as plain normalised {x,y,z,visibility} arrays —
+     identical shape to the original MediaPipe landmark arrays so all
+     downstream code (_updateMpEffects, _drawFxFrame, _mp2s) works unchanged. */
+  function _onMpResults(r) {
+    mpData.rightHand = r.rightHand || null;
+    mpData.leftHand  = r.leftHand  || null;
+    mpData.pose      = r.pose      || null;
+
+    const hasHand = !!(mpData.rightHand || mpData.leftHand);
+    document.getElementById('cam-tag-hand').classList.toggle('on', hasHand);
+    document.getElementById('cam-tag-pose').classList.toggle('on', !!mpData.pose);
+  }
+
+  /* Called every render frame while camera is active */
+  function _updateMpEffects() {
+    /* ── Effect 2: pose movement → subtle surface displacement ──
+       Tracks average delta of shoulders + hips between frames;
+       applies as a decaying NDC offset on all mesh positions.          */
+    if (mpData.pose) {
+      const keyIdx = [11, 12, 23, 24]; // shoulders + hips
+      if (_prevPoseKeys) {
+        let dx = 0, dy = 0, n = 0;
+        keyIdx.forEach(i => {
+          if (mpData.pose[i] && _prevPoseKeys[i] &&
+              mpData.pose[i].visibility > 0.25) {
+            dx += mpData.pose[i].x - _prevPoseKeys[i].x;
+            dy += mpData.pose[i].y - _prevPoseKeys[i].y;
+            n++;
+          }
+        });
+        if (n > 0) {
+          _dispX += (dx / n) * innerWidth  * DISP_SENS;
+          _dispY += (dy / n) * innerHeight * DISP_SENS;
+          const mag = Math.hypot(_dispX, _dispY);
+          if (mag > DISP_MAX_PX) { _dispX *= DISP_MAX_PX/mag; _dispY *= DISP_MAX_PX/mag; }
+        }
+      }
+      _prevPoseKeys = keyIdx.map(i => mpData.pose[i] ? {...mpData.pose[i]} : null);
+    } else {
+      _prevPoseKeys = null;
+    }
+
+    _dispX *= DISP_DECAY; _dispY *= DISP_DECAY;
+    if (Math.abs(_dispX) < 0.02) _dispX = 0;
+    if (Math.abs(_dispY) < 0.02) _dispY = 0;
+
+    /* Convert pixels → NDC and push to mesh positions */
+    const ox =  (_dispX / innerWidth)  * 2;
+    const oy = -(_dispY / innerHeight) * 2; // screen Y ↓ vs NDC Y ↑
+    surfaces.forEach(s => {
+      s.mesh.position.x     = ox; s.mesh.position.y     = oy;
+      s.wireMesh.position.x = ox; s.wireMesh.position.y = oy;
+    });
+
+    /* Live status line */
+    const parts = [];
+    if (_dispX !== 0 || _dispY !== 0) {
+      parts.push(`shift ${Math.round(_dispX)},${Math.round(_dispY)}px`);
+    }
+    document.getElementById('mp-status').textContent =
+      parts.length ? `MP › ${parts.join('  ·  ')}` : 'MP › detecting…';
+  }
+
+  document.getElementById('btn-cam').addEventListener('click', toggleCamera);
+
+  /* ══════════════════════════════════════════════════
+     PLAYLIST PANEL
+  ══════════════════════════════════════════════════ */
+
+  /* + button opens file picker */
+  document.getElementById('surf-panel-add').addEventListener('click', () => {
+    document.getElementById('pl-input').click();
+  });
+  document.getElementById('pl-input').addEventListener('change', e => {
+    if (!selectedS) return;
+    Array.from(e.target.files).forEach(f => selectedS.addClip(f));
+    e.target.value = '';
+  });
+
+  /* Playback controls */
+  document.getElementById('pl-btn-play').addEventListener('click', () => {
+    if (!selectedS) return;
+    if (selectedS.playing) selectedS.pauseClip(); else selectedS.playClip();
+  });
+  document.getElementById('pl-btn-prev').addEventListener('click', () => {
+    if (selectedS) selectedS.prevClip();
+  });
+  document.getElementById('pl-btn-next').addEventListener('click', () => {
+    if (selectedS) selectedS.nextClip();
+  });
+
+  /* Global next-all */
+  document.getElementById('btn-next-all').addEventListener('click', () => {
+    surfaces.forEach(s => s.nextClip());
+    updateSurfPanel();
+  });
+
+  /* Playlist list — click delegation (activate / loop / delete) */
+  document.getElementById('pl-list').addEventListener('click', e => {
+    if (!selectedS) return;
+    const action = e.target.dataset.action;
+    const idx = +e.target.dataset.idx;
+    if (action === 'loop') { selectedS.toggleClipLoop(idx); return; }
+    if (action === 'del')  { selectedS.removeClip(idx);     return; }
+    const item = e.target.closest('.pl-item');
+    if (item) selectedS.activateClip(+item.dataset.idx);
+  });
+
+  /* Drag-to-reorder */
+  let _plDragIdx = -1;
+  document.getElementById('pl-list').addEventListener('dragstart', e => {
+    const item = e.target.closest('.pl-item');
+    if (!item) return;
+    _plDragIdx = +item.dataset.idx;
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  document.getElementById('pl-list').addEventListener('dragover', e => {
+    e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+  });
+  document.getElementById('pl-list').addEventListener('drop', e => {
+    e.preventDefault();
+    if (!selectedS || _plDragIdx < 0) { _plDragIdx = -1; return; }
+    const item = e.target.closest('.pl-item');
+    if (!item) { _plDragIdx = -1; return; }
+    const toIdx = +item.dataset.idx;
+    if (_plDragIdx !== toIdx) {
+      const [moved] = selectedS.playlist.splice(_plDragIdx, 1);
+      selectedS.playlist.splice(toIdx, 0, moved);
+      if      (selectedS.plIdx === _plDragIdx)                              selectedS.plIdx = toIdx;
+      else if (_plDragIdx < selectedS.plIdx && toIdx >= selectedS.plIdx)    selectedS.plIdx--;
+      else if (_plDragIdx > selectedS.plIdx && toIdx <= selectedS.plIdx)    selectedS.plIdx++;
+      updateSurfPanel();
+    }
+    _plDragIdx = -1;
+  });
+
+  /* ══════════════════════════════════════════════════
+     FX SYSTEM — wave · color · particles
+  ══════════════════════════════════════════════════ */
+  const fxEnabled = { waves:true, color:true, particles:true };
+
+  const _waves = [];   // {x,y,r,maxR,alpha,color}
+  const _parts = [];   // {x,y,vx,vy,elapsed,duration,size,color}
+  let   _waveTimer = 0;
+
+  const WAVE_SPAWN_MS = 260;
+  const WAVE_SPEED    = 95;   // px/s
+  const WAVE_MAX_R    = 150;
+  const PART_MAX      = 280;
+
+  /* Normalize MediaPipe landmark to screen coords (mirrors X for face-cam) */
+  function _mp2s(lm) {
+    return { x: (1 - lm.x) * innerWidth, y: lm.y * innerHeight };
+  }
+
+  function _drawFxFrame(dt) {
+    const cv = document.getElementById('fx-canvas');
+    if (cv.width !== innerWidth)  cv.width  = innerWidth;
+    if (cv.height !== innerHeight) cv.height = innerHeight;
+    const ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, cv.width, cv.height);
+
+    const hands = [mpData.rightHand, mpData.leftHand].filter(Boolean);
+    const acol  = (selectedS ? selectedS.color : null) || '#00e5ff';
+
+    /* ── Effect 1 · Waves from wrist ─────────────── */
+    if (fxEnabled.waves && hands.length) {
+      _waveTimer += dt;
+      if (_waveTimer >= WAVE_SPAWN_MS) {
+        _waveTimer = 0;
+        hands.forEach(h => {
+          const o = _mp2s(h[0]);
+          _waves.push({ x:o.x, y:o.y, r:0, maxR:WAVE_MAX_R, alpha:0.85, color:acol });
+        });
+      }
+    }
+    for (let i = _waves.length-1; i >= 0; i--) {
+      const w = _waves[i];
+      w.r     += WAVE_SPEED * dt / 1000;
+      w.alpha  = 0.85 * (1 - w.r / w.maxR);
+      if (w.r >= w.maxR) { _waves.splice(i,1); continue; }
+      ctx.beginPath();
+      ctx.arc(w.x, w.y, w.r, 0, Math.PI*2);
+      ctx.strokeStyle = hexRgba(w.color, w.alpha);
+      ctx.lineWidth   = 2.5 * (1 - w.r / w.maxR * 0.6);
+      ctx.stroke();
+    }
+
+    /* ── Effect 2 · Color halo on body position ───── */
+    if (fxEnabled.color && mpData.pose) {
+      const vis = mpData.pose.filter(lm => lm.visibility > 0.35);
+      if (vis.length) {
+        const cx  = vis.reduce((s,l)=>s+(1-l.x),0) / vis.length * innerWidth;
+        const cy  = vis.reduce((s,l)=>s+l.y,0)     / vis.length * innerHeight;
+        const hue = Math.round((1 - mpData.pose[0].x) * 280);  // hue follows X position
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 210);
+        g.addColorStop(0,    `hsla(${hue},       100%, 60%, 0.30)`);
+        g.addColorStop(0.45, `hsla(${(hue+70)%360},100%, 55%, 0.13)`);
+        g.addColorStop(1,    'transparent');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, innerWidth, innerHeight);
+        ctx.restore();
+      }
+    }
+
+    /* ── Effect 3 · Particles at index fingertip ──── */
+    if (fxEnabled.particles && hands.length && _parts.length < PART_MAX) {
+      hands.forEach(h => {
+        const tip = _mp2s(h[8]);   // landmark 8 = index fingertip
+        for (let n=0; n<4; n++) {
+          const a   = Math.random() * Math.PI * 2;
+          const spd = 0.7 + Math.random() * 2.2;
+          _parts.push({
+            x:tip.x, y:tip.y,
+            vx: Math.cos(a)*spd, vy: Math.sin(a)*spd - 1.4,
+            elapsed:0, duration: 480 + Math.random()*520,
+            size: 1.5 + Math.random()*2.8, color: acol,
+          });
+        }
+      });
+    }
+    for (let i = _parts.length-1; i >= 0; i--) {
+      const p = _parts[i];
+      p.elapsed += dt;
+      const life = Math.max(0, 1 - p.elapsed / p.duration);
+      if (life <= 0) { _parts.splice(i,1); continue; }
+      p.x  += p.vx; p.y  += p.vy;
+      p.vy += 0.055; p.vx *= 0.97; p.vy *= 0.97;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * life, 0, Math.PI*2);
+      ctx.fillStyle = hexRgba(p.color, life * 0.88);
+      ctx.fill();
+    }
+  }
+
+  /* Panel toggle */
+  document.getElementById('fx-header').addEventListener('click', () => {
+    document.getElementById('fx-panel').classList.toggle('collapsed');
+  });
+  ['waves','color','particles'].forEach(key => {
+    const btn = document.getElementById(`fx-btn-${key}`);
+    btn.addEventListener('click', () => {
+      fxEnabled[key] = !fxEnabled[key];
+      btn.classList.toggle('on', fxEnabled[key]);
+      btn.textContent = fxEnabled[key] ? 'ON' : 'OFF';
+      /* Clear pools when disabling */
+      if (!fxEnabled[key]) {
+        if (key === 'waves')     _waves.length = 0;
+        if (key === 'particles') _parts.length = 0;
+      }
+    });
   });
 
   /* ══════════════════════════════════════════════════
      RENDER LOOP
   ══════════════════════════════════════════════════ */
-  (function loop() {
+  let _fxT = 0;
+  (function loop(ts) {
     requestAnimationFrame(loop);
-    // Rebuild only dirty surfaces (batched per frame)
-    for (const id of dirty) {
-      const s=surfaces.find(x=>x.id===id);
-      if (s) s.rebuildGeometry();
-    }
+    const dt = Math.min(ts - _fxT, 100); _fxT = ts;
+    for (const id of dirty) { const s=surfaces.find(x=>x.id===id); if(s) s.rebuildGeometry(); }
     dirty.clear();
-    renderer.render(scene, camera);
-  })();
+    if (mpActive) { _updateMpEffects(); _drawFxFrame(dt); }
+    _updateSceneTransition(dt);
+    renderer.render(scene,camera);
+  })(0);
+
+  /* ══════════════════════════════════════════════════
+     DRAGGABLE PANELS
+  ══════════════════════════════════════════════════ */
+  function makeDraggable(panel, handle) {
+    handle.style.cursor = 'grab';
+
+    // Shared drag logic — called from both mouse and touch paths
+    function _startDrag(startX, startY) {
+      const rect = panel.getBoundingClientRect();
+      const ox = startX - rect.left, oy = startY - rect.top;
+      let dragged = false;
+
+      function move(cx, cy) {
+        if (!dragged && Math.hypot(cx - startX, cy - startY) > 5) {
+          dragged = true;
+          panel.style.left = rect.left + 'px'; panel.style.top = rect.top + 'px';
+          panel.style.right = 'auto'; panel.style.bottom = 'auto'; panel.style.transform = 'none';
+          handle.style.cursor = 'grabbing';
+          document.body.style.userSelect = 'none';
+        }
+        if (dragged) {
+          panel.style.left = Math.max(0, Math.min(cx - ox, innerWidth  - panel.offsetWidth))  + 'px';
+          panel.style.top  = Math.max(0, Math.min(cy - oy, innerHeight - panel.offsetHeight)) + 'px';
+        }
+      }
+      function end() {
+        if (dragged) {
+          handle.style.cursor = 'grab';
+          document.body.style.userSelect = '';
+          const suppress = ev => { ev.stopPropagation(); ev.preventDefault(); };
+          handle.addEventListener('click', suppress, { capture:true, once:true });
+        }
+      }
+      return { move, end };
+    }
+
+    // Mouse
+    handle.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      const drag = _startDrag(e.clientX, e.clientY);
+      const onMove = ev => drag.move(ev.clientX, ev.clientY);
+      const onUp   = () => { drag.end(); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup',   onUp);
+    });
+
+    // Touch
+    handle.addEventListener('touchstart', e => {
+      if (e.touches.length !== 1) return;
+      e.preventDefault();
+      const t0   = e.touches[0];
+      const drag = _startDrag(t0.clientX, t0.clientY);
+      const onMove = ev => { if (ev.touches[0]) drag.move(ev.touches[0].clientX, ev.touches[0].clientY); ev.preventDefault(); };
+      const onEnd  = ()  => { drag.end(); handle.removeEventListener('touchmove', onMove); handle.removeEventListener('touchend', onEnd); handle.removeEventListener('touchcancel', onEnd); };
+      handle.addEventListener('touchmove',   onMove, { passive:false });
+      handle.addEventListener('touchend',    onEnd);
+      handle.addEventListener('touchcancel', onEnd);
+    }, { passive:false });
+  }
+
+  /* ══════════════════════════════════════════════════
+     TIMELINE EVENTS
+  ══════════════════════════════════════════════════ */
+  document.getElementById('timeline-add').addEventListener('click', addScene);
+
+  document.getElementById('scene-tr').addEventListener('input', updateSceneTrLabel);
+
+  /* Click → go to scene; prevent click after drag */
+  let _tlClickSuppressed = false;
+  document.getElementById('timeline-track').addEventListener('click', e => {
+    if (_tlClickSuppressed) { _tlClickSuppressed = false; return; }
+    const block = e.target.closest('.tl-scene');
+    if (block) applyScene(+block.dataset.idx);
+  });
+
+  /* Double-click → inline rename */
+  document.getElementById('timeline-track').addEventListener('dblclick', e => {
+    const block = e.target.closest('.tl-scene');
+    if (!block) return;
+    const idx    = +block.dataset.idx;
+    const nameEl = block.querySelector('.tl-name');
+    if (!nameEl) return;
+    const orig = scenes[idx].name;
+    nameEl.contentEditable = 'true';
+    nameEl.focus();
+    // Select all text
+    const range = document.createRange();
+    range.selectNodeContents(nameEl);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    const finish = (save) => {
+      nameEl.contentEditable = 'false';
+      if (save) {
+        const newName = nameEl.textContent.trim() || orig;
+        scenes[idx].name = newName;
+        nameEl.textContent = newName;
+      } else {
+        nameEl.textContent = orig;
+      }
+    };
+    nameEl.addEventListener('keydown', ev => {
+      ev.stopPropagation();
+      if (ev.key === 'Enter')  { ev.preventDefault(); finish(true);  nameEl.blur(); }
+      if (ev.key === 'Escape') { finish(false); nameEl.blur(); }
+    }, { once: true });
+    nameEl.addEventListener('blur', () => finish(true), { once: true });
+  });
+
+  /* Right-click → delete */
+  document.getElementById('timeline-track').addEventListener('contextmenu', e => {
+    e.preventDefault();
+    const block = e.target.closest('.tl-scene');
+    if (block) removeScene(+block.dataset.idx);
+  });
+
+  /* Timeline DnD reorder */
+  let _sceneDragIdx = -1;
+  document.getElementById('timeline-track').addEventListener('dragstart', e => {
+    const block = e.target.closest('.tl-scene');
+    if (!block) return;
+    _sceneDragIdx = +block.dataset.idx;
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  document.getElementById('timeline-track').addEventListener('dragover', e => {
+    e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+    const block = e.target.closest('.tl-scene');
+    document.querySelectorAll('.tl-scene.tl-over').forEach(el => el.classList.remove('tl-over'));
+    if (block) block.classList.add('tl-over');
+  });
+  document.getElementById('timeline-track').addEventListener('dragleave', e => {
+    if (!e.currentTarget.contains(e.relatedTarget))
+      document.querySelectorAll('.tl-scene.tl-over').forEach(el => el.classList.remove('tl-over'));
+  });
+  document.getElementById('timeline-track').addEventListener('drop', e => {
+    e.preventDefault();
+    document.querySelectorAll('.tl-scene.tl-over').forEach(el => el.classList.remove('tl-over'));
+    const block = e.target.closest('.tl-scene');
+    if (!block || _sceneDragIdx < 0) { _sceneDragIdx = -1; return; }
+    const toIdx = +block.dataset.idx;
+    if (_sceneDragIdx !== toIdx) {
+      _tlClickSuppressed = true;
+      const [moved] = scenes.splice(_sceneDragIdx, 1);
+      scenes.splice(toIdx, 0, moved);
+      if      (currentSceneIdx === _sceneDragIdx) currentSceneIdx = toIdx;
+      else if (_sceneDragIdx < currentSceneIdx && toIdx >= currentSceneIdx) currentSceneIdx--;
+      else if (_sceneDragIdx > currentSceneIdx && toIdx <= currentSceneIdx) currentSceneIdx++;
+      updateScenePanel();
+    }
+    _sceneDragIdx = -1;
+  });
 
   /* ══════════════════════════════════════════════════
      INIT
   ══════════════════════════════════════════════════ */
-  renderer.setSize(innerWidth, innerHeight);
+  renderer.setSize(innerWidth,innerHeight);
+  updateSliceTabs();
+  updateScenePanel();
+  calcProjector();
+  updateSceneTrLabel();
+
+  /* Apply draggable behaviour to all floating panels */
+  makeDraggable(document.getElementById('proj-panel'),  document.getElementById('proj-header'));
+  makeDraggable(document.getElementById('fx-panel'),    document.getElementById('fx-header'));
+  makeDraggable(document.getElementById('surf-panel'),  document.getElementById('surf-panel-header'));
+  makeDraggable(document.getElementById('cam-preview'), document.getElementById('cam-drag-bar'));
   </script>
 </body>
 </html>
